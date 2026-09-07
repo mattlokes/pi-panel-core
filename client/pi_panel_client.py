@@ -166,6 +166,11 @@ class PiPanelClient:
             info["view_count"] = int(info["view_count"])
         if "transitioning" in info:
             info["transitioning"] = info["transitioning"] == "true"
+        for key in ("output_width", "output_height"):
+            if key in info:
+                info[key] = int(info[key])
+        if "refresh" in info:
+            info["refresh"] = float(info["refresh"])
         return info
 
     def version(self) -> str:
@@ -220,6 +225,10 @@ def main():
                   f"active_name={s.get('active_name')}  "
                   f"view_count={s.get('view_count')}  "
                   f"transitioning={s.get('transitioning')}")
+            if "output" in s:
+                print(f"output={s.get('output')}  "
+                      f"{s.get('output_width')}x{s.get('output_height')}"
+                      f"@{s.get('refresh')}Hz")
 
         elif cmd == "switch":
             if len(args) < 2:

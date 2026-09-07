@@ -150,7 +150,7 @@ Text line-based over `AF_UNIX SOCK_STREAM` (default: `/tmp/pi-panel.sock`).
 | `close <name\|id>` | `OK` or `ERROR ...` |
 | `restart <name\|id>` | `OK pid=N` or `ERROR ...` |
 | `list` | `DATA N` + N lines + `END` |
-| `status` | `OK active_id=N active_name=X view_count=N transitioning=false` |
+| `status` | `OK active_id=N active_name=X view_count=N transitioning=false output=NAME output_width=W output_height=H refresh=HZ` |
 | `version` | `OK pi-panel-compositor/1.0 protocol/1` |
 | `quit` | `OK`, then the compositor shuts down cleanly |
 

@@ -59,14 +59,25 @@ static void cmd_list(struct ipc_client *client) {
 }
 
 static void cmd_status(struct ipc_client *client) {
-    struct server *server = client->server;
-    struct view *av = server->active_view;
+    struct server     *server = client->server;
+    struct view       *av     = server->active_view;
+    struct wlr_output *out    = server->primary_output;
+
+    /* refresh is in mHz; report Hz to two decimals, 0 if unknown (the
+     * headless and nested backends do not always report one). */
+    int refresh_mhz = out ? out->refresh : 0;
+
     ipc_client_writef(client,
-        "OK active_id=%d active_name=%s view_count=%d transitioning=%s\n",
+        "OK active_id=%d active_name=%s view_count=%d transitioning=%s "
+        "output=%s output_width=%d output_height=%d refresh=%d.%03d\n",
         av ? av->id   : -1,
         av && av->name ? av->name : "(none)",
         server->view_count,
-        server->transition.active ? "true" : "false");
+        server->transition.active ? "true" : "false",
+        out && out->name ? out->name : "(none)",
+        server->output_width,
+        server->output_height,
+        refresh_mhz / 1000, refresh_mhz % 1000);
 }
 
 static void cmd_switch(struct ipc_client *client, const char *arg) {
