@@ -53,3 +53,11 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Meson / ninja build directory
+build/
+builddir/
+
+# wayland-scanner generated protocol headers
+*-protocol.h
+*-protocol.c
