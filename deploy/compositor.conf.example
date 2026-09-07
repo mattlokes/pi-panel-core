@@ -1,0 +1,14 @@
+# pi-panel kiosk views
+#
+#   <name>  <auto-restart: yes|no>  <command>
+#
+# Prefix commands with "exec" where you can: it keeps the launched process as
+# the compositor's direct child. (Not required — the compositor also matches a
+# client to its slot by walking up the process tree — but it is tidier.)
+#
+# These two placeholder views each open a shell, which is handy for confirming
+# the kiosk boots and for poking around from the physical machine. Replace them
+# with your real panels.
+
+main     yes   exec foot --app-id=main --font=monospace:size=20
+second   yes   exec foot --app-id=second --font=monospace:size=20
