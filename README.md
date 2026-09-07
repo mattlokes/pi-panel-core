@@ -174,8 +174,16 @@ python3 client/pi_panel_client.py quit     # or: pkill -TERM pi-panel-compositor
 
 To replace the desktop with the kiosk on boot, without a display manager:
 
-1. Put the launcher at `~/.local/bin/pi-panel-session` (it sets
-   `WLR_RENDERER=pixman` on Pis with no GPU MMU, then execs the compositor).
+1. Put the launcher at `~/.local/bin/pi-panel-session`. It sets
+   `WLR_RENDERER=pixman` on Pis with no GPU MMU, then execs the compositor
+   under `systemd-cat` so its output goes to the journal instead of scrolling
+   over tty1:
+
+   ```sh
+   exec systemd-cat --identifier=pi-panel --level-prefix=true \
+       "$HOME/pi-panel-compositor/build/pi-panel-compositor" \
+       --config "$HOME/.config/pi-panel/compositor.conf" "$@"
+   ```
 2. Have `~/.bash_profile` run it on tty1 only:
 
    ```sh
@@ -201,6 +209,23 @@ disable it. To go back to the desktop:
 ```bash
 sudo systemctl set-default graphical.target && sudo reboot
 ```
+
+## Logging
+
+By default the compositor uses the standard wlroots logger on stderr. When
+stderr is a journal stream — systemd sets `JOURNAL_STREAM`, and `systemd-cat`
+does too — it instead prefixes each line with a `<N>` syslog level, so
+journald records real priorities rather than filing everything as `info`.
+Pair it with `systemd-cat --level-prefix=true`, as the session launcher does:
+
+```bash
+journalctl -t pi-panel -b        # this boot
+journalctl -t pi-panel -f        # follow live
+journalctl -t pi-panel -p err    # errors only
+```
+
+Journald storage is persistent on Raspberry Pi OS, so the log from a boot that
+failed is still readable after the next one.
 
 ## Useful Environment Variables
 

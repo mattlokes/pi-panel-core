@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <errno.h>
 
@@ -73,6 +74,27 @@ static void load_config(struct server *server, const char *path) {
     fclose(f);
 }
 
+/* ---------------------------------------------------------------------------
+ * journald logger
+ *
+ * wlroots writes every level to stderr, so under systemd-cat the whole log
+ * would otherwise be filed as "info" and `journalctl -p err` would find
+ * nothing.  Prefixing each line with a syslog level in <N> form lets journald
+ * record real priorities (systemd-cat --level-prefix=true).
+ * ---------------------------------------------------------------------------*/
+static void log_journald(enum wlr_log_importance importance,
+                          const char *fmt, va_list args) {
+    int priority;
+    switch (importance) {
+    case WLR_ERROR: priority = 3; break;  /* LOG_ERR */
+    case WLR_INFO:  priority = 6; break;  /* LOG_INFO */
+    default:        priority = 7; break;  /* LOG_DEBUG */
+    }
+    fprintf(stderr, "<%d>", priority);
+    vfprintf(stderr, fmt, args);
+    fputc('\n', stderr);
+}
+
 static void print_usage(const char *prog) {
     fprintf(stderr,
         "Usage: %s [OPTIONS]\n"
@@ -119,7 +141,11 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    wlr_log_init(debug ? WLR_DEBUG : WLR_INFO, NULL);
+    /* systemd sets JOURNAL_STREAM when stderr is a journal stream (systemd-cat
+     * does too).  In a plain terminal, stick with the default wlroots logger —
+     * it is friendlier to read than bare <N> prefixes. */
+    wlr_log_init(debug ? WLR_DEBUG : WLR_INFO,
+                 getenv("JOURNAL_STREAM") ? log_journald : NULL);
 
     struct server_config cfg = {
         .wayland_socket = wayland_socket,
