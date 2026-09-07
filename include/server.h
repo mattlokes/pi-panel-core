@@ -81,6 +81,10 @@ struct server {
     /* Child process management */
     struct wl_event_source         *sigchld_source;
 
+    /* Clean shutdown on SIGINT/SIGTERM */
+    struct wl_event_source         *sigint_source;
+    struct wl_event_source         *sigterm_source;
+
     /* Subsystems */
     struct input_manager            input;
     struct ipc_server               ipc;

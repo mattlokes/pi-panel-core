@@ -214,6 +214,12 @@ static void cmd_restart(struct ipc_client *client, const char *arg) {
     ipc_client_writef(client, "OK pid=%d\n", (int)view->pid);
 }
 
+static void cmd_quit(struct ipc_client *client) {
+    ipc_client_writef(client, "OK\n");
+    wlr_log(WLR_INFO, "Shutdown requested over IPC");
+    wl_display_terminate(client->server->display);
+}
+
 static void ipc_dispatch(struct ipc_client *client, const char *line) {
     wlr_log(WLR_DEBUG, "IPC command: '%s'", line);
 
@@ -221,6 +227,8 @@ static void ipc_dispatch(struct ipc_client *client, const char *line) {
         cmd_list(client);
     } else if (strcmp(line, "status") == 0) {
         cmd_status(client);
+    } else if (strcmp(line, "quit") == 0) {
+        cmd_quit(client);
     } else if (strcmp(line, "version") == 0) {
         ipc_client_writef(client, "OK pi-panel-compositor/1.0 protocol/1\n");
     } else if (strncmp(line, "switch ", 7) == 0) {

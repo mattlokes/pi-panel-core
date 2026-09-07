@@ -192,7 +192,18 @@ static int handle_sigchld(int sig, void *data) {
 }
 
 /* ---------------------------------------------------------------------------
- * server_assign_toplevel  (called from handle_new_xdg_surface)
+ * SIGINT/SIGTERM — leave the event loop so server_finish() can run
+ * ---------------------------------------------------------------------------*/
+
+static int handle_terminate_signal(int sig, void *data) {
+    struct server *server = data;
+    wlr_log(WLR_INFO, "Caught signal %d — shutting down", sig);
+    wl_display_terminate(server->display);
+    return 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * server_assign_toplevel  (called from handle_new_xdg_toplevel)
  * ---------------------------------------------------------------------------*/
 
 void server_assign_toplevel(struct server *server,
@@ -319,9 +330,14 @@ bool server_init(struct server *server, const struct server_config *cfg) {
     /* 11. Transition engine */
     transition_init(&server->transition, server);
 
-    /* 12. SIGCHLD handler (reap child processes) */
+    /* 12. Signal handlers: reap children, and exit cleanly on INT/TERM so
+     *     server_finish() runs and the IPC socket is unlinked. */
     server->sigchld_source = wl_event_loop_add_signal(
         server->event_loop, SIGCHLD, handle_sigchld, server);
+    server->sigint_source = wl_event_loop_add_signal(
+        server->event_loop, SIGINT, handle_terminate_signal, server);
+    server->sigterm_source = wl_event_loop_add_signal(
+        server->event_loop, SIGTERM, handle_terminate_signal, server);
 
     /* 13. Start backend — fires new_output and new_input for existing devices */
     if (!wlr_backend_start(server->backend)) {
@@ -363,6 +379,21 @@ void server_finish(struct server *server) {
         wl_event_source_remove(server->sigchld_source);
         server->sigchld_source = NULL;
     }
+    if (server->sigint_source) {
+        wl_event_source_remove(server->sigint_source);
+        server->sigint_source = NULL;
+    }
+    if (server->sigterm_source) {
+        wl_event_source_remove(server->sigterm_source);
+        server->sigterm_source = NULL;
+    }
+
+    /* Unhook the backend and shell listeners before anything is destroyed:
+     * wlroots asserts a signal's listener list is empty before freeing the
+     * object that owns it (wlr_backend_finish).  input_finish() above has
+     * already removed its own new_input listener. */
+    wl_list_remove(&server->new_output.link);
+    wl_list_remove(&server->new_xdg_toplevel.link);
 
     /* Destroy all views */
     struct view *view, *tmp;
@@ -370,9 +401,14 @@ void server_finish(struct server *server) {
         view_free(view);
     }
 
-    /* Destroy outputs */
+    /* Destroy outputs.  Unhook each output's listeners first — both for the
+     * assertion above, and so tearing down the backend cannot re-enter
+     * handle_output_destroy() on wrappers we have already freed. */
     struct output *out, *otmp;
     wl_list_for_each_safe(out, otmp, &server->outputs, link) {
+        wl_list_remove(&out->frame.link);
+        wl_list_remove(&out->request_state.link);
+        wl_list_remove(&out->destroy.link);
         wl_list_remove(&out->link);
         free(out);
     }

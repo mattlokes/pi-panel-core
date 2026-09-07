@@ -152,6 +152,55 @@ Text line-based over `AF_UNIX SOCK_STREAM` (default: `/tmp/pi-panel.sock`).
 | `list` | `DATA N` + N lines + `END` |
 | `status` | `OK active_id=N active_name=X view_count=N transitioning=false` |
 | `version` | `OK pi-panel-compositor/1.0 protocol/1` |
+| `quit` | `OK`, then the compositor shuts down cleanly |
+
+## Keybindings
+
+The compositor forwards essentially every key to the focused application — it
+is a kiosk. The one exception is the escape hatch:
+
+| Key | Action |
+|---|---|
+| `Ctrl+Alt+Backspace` | Quit the compositor |
+
+It also exits cleanly on `SIGINT` / `SIGTERM`, and on the `quit` IPC command,
+so it can always be stopped over SSH:
+
+```bash
+python3 client/pi_panel_client.py quit     # or: pkill -TERM pi-panel-compositor
+```
+
+## Running as the default session
+
+To replace the desktop with the kiosk on boot, without a display manager:
+
+1. Put the launcher at `~/.local/bin/pi-panel-session` (it sets
+   `WLR_RENDERER=pixman` on Pis with no GPU MMU, then execs the compositor).
+2. Have `~/.bash_profile` run it on tty1 only:
+
+   ```sh
+   [ -f "$HOME/.profile" ] && . "$HOME/.profile"
+   if [ -z "$WAYLAND_DISPLAY" ] && [ -z "$SSH_CONNECTION" ] && [ "$(tty)" = "/dev/tty1" ]; then
+       "$HOME/.local/bin/pi-panel-session"
+   fi
+   ```
+
+   Do **not** `exec` it: exiting the compositor should return you to a shell on
+   tty1, which is the local recovery path and avoids an agetty respawn loop if
+   the compositor fails to start.
+3. Boot to console instead of the desktop:
+
+   ```bash
+   sudo systemctl set-default multi-user.target
+   ```
+
+Raspberry Pi OS already autologins `pi` on tty1, and lightdm is only
+`WantedBy=graphical.target`, so it stops starting on its own — no need to
+disable it. To go back to the desktop:
+
+```bash
+sudo systemctl set-default graphical.target && sudo reboot
+```
 
 ## Useful Environment Variables
 

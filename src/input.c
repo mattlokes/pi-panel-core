@@ -37,10 +37,51 @@ static void handle_kb_modifiers(struct wl_listener *listener, void *data) {
     wlr_seat_keyboard_notify_modifiers(kb->im->seat, &kb->keyboard->modifiers);
 }
 
+/* Compositor keybindings, checked before a key reaches the focused client.
+ * A kiosk forwards essentially everything, so this stays deliberately small —
+ * but there must be at least one way out, or the only exit is over SSH.
+ *
+ * Ctrl+Alt+Backspace  quit the compositor
+ *
+ * Returns true if the key was consumed. */
+static bool handle_keybinding(struct input_manager *im, xkb_keysym_t sym) {
+    switch (sym) {
+    case XKB_KEY_BackSpace:
+        wlr_log(WLR_INFO, "Ctrl+Alt+Backspace — shutting down");
+        wl_display_terminate(im->server->display);
+        return true;
+    default:
+        return false;
+    }
+}
+
 static void handle_kb_key(struct wl_listener *listener, void *data) {
     struct keyboard_device          *kb    = wl_container_of(listener, kb, key);
     struct wlr_keyboard_key_event   *event = data;
     struct input_manager            *im    = kb->im;
+
+    bool handled = false;
+
+    /* Only presses, and only while both Ctrl and Alt are held. */
+    uint32_t mods = wlr_keyboard_get_modifiers(kb->keyboard);
+    const uint32_t want = WLR_MODIFIER_CTRL | WLR_MODIFIER_ALT;
+
+    if ((mods & want) == want &&
+        event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        /* libinput keycodes are offset by 8 from xkb's. */
+        const xkb_keysym_t *syms;
+        int nsyms = xkb_state_key_get_syms(kb->keyboard->xkb_state,
+                                            event->keycode + 8, &syms);
+        for (int i = 0; i < nsyms; i++) {
+            if (handle_keybinding(im, syms[i])) {
+                handled = true;
+            }
+        }
+    }
+
+    if (handled) {
+        return;
+    }
 
     wlr_seat_set_keyboard(im->seat, kb->keyboard);
     wlr_seat_keyboard_notify_key(im->seat,

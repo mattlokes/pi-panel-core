@@ -18,6 +18,7 @@ Usage from the command line:
     python3 pi_panel_client.py close myapp
     python3 pi_panel_client.py restart myapp
     python3 pi_panel_client.py version
+    python3 pi_panel_client.py quit
 """
 
 import socket
@@ -171,6 +172,10 @@ class PiPanelClient:
         """Return the compositor version string."""
         return self._ok("version")
 
+    def quit(self) -> None:
+        """Ask the compositor to shut down cleanly."""
+        self._ok("quit")
+
 
 # ----------------------------------------------------------------------
 # Command-line interface
@@ -255,6 +260,10 @@ def main():
 
         elif cmd == "version":
             print(c.version())
+
+        elif cmd == "quit":
+            c.quit()
+            print("OK")
 
         else:
             print(f"Unknown command: {cmd}")
