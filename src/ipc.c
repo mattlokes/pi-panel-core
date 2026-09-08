@@ -27,9 +27,29 @@ void ipc_client_writef(struct ipc_client *client, const char *fmt, ...) {
     va_end(ap);
 
     if (n <= 0) return;
-    /* Best-effort write; ignore partial writes for now */
-    if (write(client->fd, buf, (size_t)n) < 0) {
-        wlr_log(WLR_DEBUG, "IPC write error: %s", strerror(errno));
+
+    /* vsnprintf() returns the length it *would* have written, which for an
+     * over-long line exceeds the buffer.  Passing that straight to write()
+     * reads past the end of buf — reachable through cmd_list(), whose rows
+     * embed client-supplied title/app_id strings of unbounded length.  Clamp
+     * to what the buffer actually holds. */
+    size_t len = (size_t)n < sizeof(buf) ? (size_t)n : sizeof(buf) - 1;
+
+    /* The client fd is non-blocking, so a short write is possible against a
+     * slow reader.  Retry rather than silently dropping the tail. */
+    size_t off = 0;
+    while (off < len) {
+        ssize_t written = write(client->fd, buf + off, len - off);
+        if (written > 0) {
+            off += (size_t)written;
+            continue;
+        }
+        if (written < 0 && errno == EINTR) {
+            continue;
+        }
+        wlr_log(WLR_DEBUG, "IPC write error after %zu/%zu bytes: %s",
+            off, len, strerror(errno));
+        break;
     }
 }
 
@@ -45,8 +65,13 @@ static void cmd_list(struct ipc_client *client) {
 
     struct view *v;
     wl_list_for_each(v, &server->views, link) {
+        /* name/app_id/title come from the Wayland client and have no length
+         * limit, so bound them here: a row must stay well inside the write
+         * buffer, and truncating a field is far better than truncating the
+         * row and losing its trailing key=value pairs. */
         ipc_client_writef(client,
-            "id=%d name=%s app_id=%s title=%s active=%s mapped=%s pid=%d\n",
+            "id=%d name=%.128s app_id=%.128s title=%.256s "
+            "active=%s mapped=%s pid=%d\n",
             v->id,
             v->name    ? v->name    : "(none)",
             v->app_id  ? v->app_id  : "(none)",
