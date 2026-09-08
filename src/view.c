@@ -276,6 +276,23 @@ bool view_launch(struct view *view) {
          * a forking wrapper script and the app it spawned together. */
         setsid();
 
+        /* Restore a clean signal environment before exec.
+         *
+         * libwayland's signal event sources are backed by signalfd, which
+         * requires those signals to be blocked process-wide — and a blocked
+         * mask survives both fork and exec.  Left alone, every launched app
+         * inherits a mask in which SIGTERM can never be delivered, so `close`
+         * and `restart` silently do nothing to it.  Defensive apps (foot) clear
+         * the mask themselves and hide the problem; most do not.
+         *
+         * An ignored disposition is inherited across exec too, and the
+         * compositor ignores SIGPIPE, so reset that as well or children see
+         * EPIPE where they expect to die. */
+        signal(SIGPIPE, SIG_DFL);
+        sigset_t mask;
+        sigemptyset(&mask);
+        sigprocmask(SIG_SETMASK, &mask, NULL);
+
         if (view->server->wayland_socket) {
             setenv("WAYLAND_DISPLAY", view->server->wayland_socket, 1);
         }
