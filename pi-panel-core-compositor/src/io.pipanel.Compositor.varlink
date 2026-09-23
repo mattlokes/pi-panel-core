@@ -33,12 +33,23 @@ type Slot (
   unit: ?string
 )
 
+# The clock overlay, drawn above every app (and above the fade).
+type Clock (
+  enabled: bool,
+  # strftime(3) format, in the compositor's local time
+  format: string,
+  position: (top_left, top_right, bottom_left, bottom_right, center),
+  # text height in pixels; 0 = automatic (a sixteenth of the output height)
+  size: int
+)
+
 type Status (
   # name of the visible slot, if any
   active: ?string,
   transitioning: bool,
   output_power: bool,
-  output: ?Output
+  output: ?Output,
+  clock: Clock
 )
 
 type Event (
@@ -52,7 +63,8 @@ type Event (
     active_changed,
     transition_started,
     transition_finished,
-    output_power_changed
+    output_power_changed,
+    clock_changed
   ),
   # every event carries the current status
   status: Status,
@@ -80,6 +92,16 @@ method Switch(slot: string, transition: ?(fade, cut)) -> ()
 # Turn the display off (blank, e.g. at night) and on again.
 method SetOutputPower(on: bool) -> ()
 
+# Show, hide or restyle the clock overlay. Omitted fields keep their values;
+# the defaults are "%H:%M", bottom_right and automatic size. format must be
+# 1-63 bytes; size must be 0 or 8-1000.
+method SetClock(
+  enabled: bool,
+  format: ?string,
+  position: ?(top_left, top_right, bottom_left, bottom_right, center),
+  size: ?int
+) -> (clock: Clock)
+
 # Shut the compositor down cleanly.
 method Quit() -> ()
 
@@ -90,3 +112,4 @@ method Subscribe() -> (event: Event)
 error NoSuchSlot (slot: string)
 error SlotNotMapped (slot: string)
 error InvalidName (name: string)
+error ClockUnavailable (reason: string)

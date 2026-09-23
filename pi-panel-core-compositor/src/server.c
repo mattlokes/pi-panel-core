@@ -136,7 +136,12 @@ static void handle_new_output(struct wl_listener *listener, void *data) {
             wlr_log(WLR_ERROR, "Failed to create fade_rect");
         } else {
             wlr_scene_node_set_enabled(&server->fade_rect->node, false);
+            /* Overlays such as the clock stay visible through a fade. */
+            wlr_scene_node_place_below(&server->fade_rect->node,
+                                       &server->overlay_layer->node);
         }
+
+        clock_output_changed(&server->clock);
     }
 }
 
@@ -281,7 +286,15 @@ bool server_init(struct server *server, const struct server_config *cfg) {
         wlr_log(WLR_ERROR, "Failed to create app_layer scene tree");
         return false;
     }
-    /* fade_rect is created in handle_new_output once dimensions are known */
+    /* Overlays (the clock) go above everything, the fade included */
+    server->overlay_layer =
+        wlr_scene_tree_create(&server->scene->tree);
+    if (!server->overlay_layer) {
+        wlr_log(WLR_ERROR, "Failed to create overlay_layer scene tree");
+        return false;
+    }
+    /* fade_rect is created in handle_new_output once dimensions are known,
+     * and placed between the two layers */
 
     /* 7. XDG shell (protocol version 3) */
     server->xdg_shell = wlr_xdg_shell_create(server->display, 3);
@@ -311,8 +324,9 @@ bool server_init(struct server *server, const struct server_config *cfg) {
         return false;
     }
 
-    /* 11. Transition engine */
+    /* 11. Transition engine and the clock overlay (off until SetClock) */
     transition_init(&server->transition, server);
+    clock_init(&server->clock, server);
 
     /* 12. Exit cleanly on INT/TERM so server_finish() runs and the IPC socket
      *     is unlinked.  (systemd stops us with SIGTERM.) */
@@ -354,6 +368,7 @@ bool server_init(struct server *server, const struct server_config *cfg) {
 
 void server_finish(struct server *server) {
     transition_finish(&server->transition);
+    clock_finish(&server->clock);
     ipc_finish(&server->ipc);
     input_finish(&server->input);
 

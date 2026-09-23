@@ -12,6 +12,7 @@
 
 #include "cJSON.h"
 #include "io.pipanel.Compositor.varlink.h"   /* generated: ipc_interface_description */
+#include "clock.h"
 #include "ipc.h"
 #include "server.h"
 #include "slot.h"
@@ -243,6 +244,16 @@ static cJSON *output_json(struct server *server) {
     return o;
 }
 
+static cJSON *clock_json(struct server *server) {
+    struct clock_state *cs = &server->clock;
+    cJSON *o = cJSON_CreateObject();
+    cJSON_AddBoolToObject(o, "enabled", cs->enabled);
+    cJSON_AddStringToObject(o, "format", cs->format);
+    cJSON_AddStringToObject(o, "position", clock_position_name(cs->position));
+    cJSON_AddNumberToObject(o, "size", cs->size);
+    return o;
+}
+
 static cJSON *status_json(struct server *server) {
     cJSON *s = cJSON_CreateObject();
     char buf[32];
@@ -251,6 +262,7 @@ static cJSON *status_json(struct server *server) {
     cJSON_AddBoolToObject(s, "transitioning", server->transition.active);
     cJSON_AddBoolToObject(s, "output_power", server->output_power);
     cJSON_AddItemToObject(s, "output", output_json(server));
+    cJSON_AddItemToObject(s, "clock", clock_json(server));
     return s;
 }
 
@@ -524,6 +536,50 @@ static void m_set_output_power(struct ipc_client *client, cJSON *params) {
     reply(client, NULL, false);
 }
 
+static void m_set_clock(struct ipc_client *client, cJSON *params) {
+    struct server *server = client->server;
+
+    cJSON *enabled = cJSON_GetObjectItemCaseSensitive(params, "enabled");
+    if (!cJSON_IsBool(enabled)) {
+        invalid_parameter(client, "enabled");
+        return;
+    }
+    const char *format;
+    if (!opt_string(params, "format", &format) ||
+            (format && (!*format || strlen(format) >= CLOCK_FORMAT_MAX))) {
+        invalid_parameter(client, "format");
+        return;
+    }
+    const char *pos_name;
+    int position = -1;
+    if (!opt_string(params, "position", &pos_name) ||
+            (pos_name && (position = clock_position_parse(pos_name)) < 0)) {
+        invalid_parameter(client, "position");
+        return;
+    }
+    int size = -1;
+    cJSON *size_item = cJSON_GetObjectItemCaseSensitive(params, "size");
+    if (size_item && !cJSON_IsNull(size_item)) {
+        double d = cJSON_IsNumber(size_item) ? size_item->valuedouble : -1.0;
+        if (!(d == 0.0 || (d >= CLOCK_SIZE_MIN && d <= CLOCK_SIZE_MAX)) || d != (int)d) {
+            invalid_parameter(client, "size");
+            return;
+        }
+        size = (int)d;
+    }
+
+    const char *err = NULL;
+    if (!clock_configure(&server->clock, cJSON_IsTrue(enabled), format,
+                         position, size, &err)) {
+        reply_error_str(client, IFACE ".ClockUnavailable", "reason", err);
+        return;
+    }
+    ipc_event(server, "clock_changed");
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddItemToObject(out, "clock", clock_json(server));
+    reply(client, out, false);
+}
+
 static void m_quit(struct ipc_client *client, cJSON *params) {
     (void)params;
     reply(client, NULL, false);
@@ -600,6 +656,7 @@ static const struct method methods[] = {
     { IFACE ".GetStatus",                       m_get_status },
     { IFACE ".Switch",                          m_switch },
     { IFACE ".SetOutputPower",                  m_set_output_power },
+    { IFACE ".SetClock",                        m_set_clock },
     { IFACE ".Quit",                            m_quit },
     { IFACE ".Subscribe",                       m_subscribe },
     { SERVICE_IFACE ".GetInfo",                 m_get_info },

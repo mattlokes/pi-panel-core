@@ -146,8 +146,9 @@ void transition_begin(struct transition_state *ts, struct view *target) {
     float color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     wlr_scene_rect_set_color(server->fade_rect, color);
     wlr_scene_node_set_enabled(&server->fade_rect->node, true);
-    /* Ensure fade_rect is the topmost node */
-    wlr_scene_node_raise_to_top(&server->fade_rect->node);
+    /* Keep fade_rect above the apps and below the overlays */
+    wlr_scene_node_place_below(&server->fade_rect->node,
+                               &server->overlay_layer->node);
 
     /* Kick off the timer */
     wl_event_source_timer_update(ts->timer, TRANSITION_FRAME_MS);

@@ -25,6 +25,7 @@ pi-panel-ctl ──Varlink──▶ compositor  ◀──Wayland── pi-panel-
 - **Dynamic slots**: slots are created over IPC and matched by systemd unit, with Wayland `app_id` as a fallback.
 - **Transitions**: fade to black and back (about 500 ms each way), or an instant cut.
 - **Display power**: turn the output off and on, e.g. for night time.
+- **Clock overlay**: the time in a corner (or centred), drawn above every app and through fades. Off until `SetClock` turns it on.
 - **Varlink IPC**: introspectable, with a push-based `Subscribe` and no polling.
 - **Touchscreen forwarding** to the visible window. This has not been tested on hardware yet.
 
@@ -42,6 +43,12 @@ OS already has configured. Plain Debian trixie only carries 0.18.
 [cJSON](https://github.com/DaveGamble/cJSON) 1.7.18 (MIT) is vendored in
 `src/vendor/`. That keeps the build free of libsystemd, and free of anything
 that would need an `apt install`.
+
+For the same reason, [stb_truetype](https://github.com/nothings/stb) 1.26
+(public domain / MIT) is vendored there too. It draws the clock from a TTF on
+the Pi, by default DejaVu Sans Bold (`-Dclock_font=PATH` changes it). To look
+at the rasterizer's output without a compositor, run
+`build/clock-preview FONT.ttf "12:34" 64 > clock.pam`.
 
 ## Build
 
@@ -103,6 +110,7 @@ varlinkctl introspect /run/pi-panel/compositor/io.pipanel.Compositor io.pipanel.
 | `ListSlots()` / `GetStatus()` | Current state. |
 | `Switch(slot, transition?)` | Show a slot, with a fade (the default) or a cut. |
 | `SetOutputPower(on)` | Blank or unblank the display. |
+| `SetClock(enabled, format?, position?, size?)` | Show, hide or restyle the clock overlay. Omitted fields are kept. |
 | `Subscribe()` | Needs `more`. Sends a snapshot, then one event per change. |
 | `Quit()` | Clean shutdown. |
 
@@ -110,6 +118,16 @@ A window that matches no slot is listed as `anon-<id>` and is never shown on
 its own; switch to it explicitly to see it. If nothing is visible, the first
 *registered* window to map is shown, so the panel does not sit black while the
 controller is down.
+
+The clock takes a `strftime(3)` format (default `%H:%M`), a corner or
+`center` (default `bottom_right`), and a text height in pixels (`0`, the
+default, means a sixteenth of the output height). It is redrawn on the minute,
+or on the second if the format shows seconds:
+
+```bash
+varlinkctl call /run/pi-panel/compositor/io.pipanel.Compositor \
+    io.pipanel.Compositor.SetClock '{"enabled":true,"format":"%a %H:%M","position":"top_right"}'
+```
 
 The socket is `0660`. A subscriber more than 256 KiB behind is disconnected
 rather than allowed to stall the compositor.

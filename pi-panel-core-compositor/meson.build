@@ -16,12 +16,14 @@ wlroots    = dependency('wlroots-0.19', required: true)
 wayland_sv = dependency('wayland-server', required: true)
 xkbcommon  = dependency('xkbcommon', required: true)
 pixman     = dependency('pixman-1', required: true)
+libm       = cc.find_library('m', required: true)
 
 add_project_arguments(
   '-DWLR_USE_UNSTABLE',
   '-D_GNU_SOURCE',   # accept4() and friends
   '-DPI_PANEL_VERSION="@0@"'.format(meson.project_version()),
   '-DIPC_DEFAULT_PATH="@0@"'.format(get_option('default_ipc_socket')),
+  '-DCLOCK_DEFAULT_FONT="@0@"'.format(get_option('clock_font')),
   language: 'c',
 )
 
@@ -66,6 +68,13 @@ cjson = static_library('cjson', 'src/vendor/cJSON.c',
   c_args: ['-w'],
 )
 
+# stb_truetype (public domain / MIT, v1.26) is vendored the same way: it
+# rasterizes the clock overlay's text from a TTF, and the Pi has no
+# freetype/cairo development packages.
+stb_truetype = static_library('stb_truetype', 'src/vendor/stb_truetype.c',
+  c_args: ['-w'],
+)
+
 src = files(
   'src/main.c',
   'src/server.c',
@@ -75,13 +84,24 @@ src = files(
   'src/ipc.c',
   'src/notify.c',
   'src/transition.c',
+  'src/clock.c',
+  'src/clock_render.c',
 )
 
 executable('pi-panel-compositor',
   sources: [src, xdg_shell_h, interface_h],
-  dependencies: [wlroots, wayland_sv, xkbcommon, pixman],
-  link_with: cjson,
+  dependencies: [wlroots, wayland_sv, xkbcommon, pixman, libm],
+  link_with: [cjson, stb_truetype],
   include_directories: include_directories('include', 'src/vendor'),
   install: true,
   install_dir: get_option('bindir'),
+)
+
+# Renders the clock text to an image: tools/clock_preview.c says how.
+executable('clock-preview',
+  sources: ['tools/clock_preview.c', 'src/clock_render.c'],
+  dependencies: [libm],
+  link_with: stb_truetype,
+  include_directories: include_directories('include', 'src/vendor'),
+  install: false,
 )

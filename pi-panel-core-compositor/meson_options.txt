@@ -2,3 +2,7 @@ option('default_ipc_socket',
   type: 'string',
   value: '/run/pi-panel/compositor/io.pipanel.Compositor',
   description: 'Default Varlink socket path (the systemd unit passes it explicitly too)')
+option('clock_font',
+  type: 'string',
+  value: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+  description: 'TrueType font for the clock overlay')

@@ -16,6 +16,7 @@
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/util/log.h>
 
+#include "clock.h"
 #include "input.h"
 #include "ipc.h"
 #include "transition.h"
@@ -58,8 +59,9 @@ struct server {
     /* Scene graph */
     struct wlr_scene               *scene;
     struct wlr_scene_output_layout *scene_output_layout;
-    struct wlr_scene_tree          *app_layer;  /* lower z-order: app surfaces */
-    struct wlr_scene_rect          *fade_rect;  /* topmost: transition overlay */
+    struct wlr_scene_tree          *app_layer;     /* bottom: app surfaces */
+    struct wlr_scene_rect          *fade_rect;     /* above apps: transition fade */
+    struct wlr_scene_tree          *overlay_layer; /* top: the clock, above the fade */
 
     /* XDG shell */
     struct wlr_xdg_shell           *xdg_shell;
@@ -85,6 +87,7 @@ struct server {
     struct input_manager            input;
     struct ipc_server               ipc;
     struct transition_state         transition;
+    struct clock_state              clock;
 };
 
 struct server_config {

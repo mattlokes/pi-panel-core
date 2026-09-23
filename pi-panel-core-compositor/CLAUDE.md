@@ -47,6 +47,8 @@ unit.
 - **Emit events before mutating.** `ipc_event_*` encodes immediately. For example, send `slot_removed` for `anon-N` *before* setting `view->slot`.
 - **Clients are closed only from an idle callback** (`client_doom` → `reap_doomed`), never under a handler or a broadcast loop.
 - **A Subscribe never ends.** Any further call on that connection drops the client. A subscriber more than `IPC_OUT_MAX` behind is dropped, never waited on.
+- **Scene order is app_layer, then fade_rect, then overlay_layer.** Overlays (the clock) stay visible through a fade, so position `fade_rect` with `place_below(overlay_layer)`, never `raise_to_top`.
+- **The clock has no polling timer.** It uses a `CLOCK_REALTIME` timerfd that is armed for the next minute or second, with `TFD_TIMER_CANCEL_ON_SET`, so an NTP step at boot redraws it at once. Its text is drawn by `clock_render.c`, which is free of wlroots so that `clock-preview` can use it.
 - **The interface file is the source of truth.** `tools/embed.py` compiles `src/io.pipanel.Compositor.varlink` into the binary. Edit the file, not a C string.
 
 ## wlroots 0.19 specifics
