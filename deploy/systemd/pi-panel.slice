@@ -1,0 +1,5 @@
+[Unit]
+Description=pi-panel smart display
+Documentation=file:/home/pi/pi-panel-core/README.md
+# Every pi-panel process runs in here, so `systemd-cgtop pi-panel.slice` shows
+# the panel's total CPU and memory, and limits can be set in one place.

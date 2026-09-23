@@ -1,0 +1,22 @@
+// Let the panel user manage the panel's own units, and nothing else.
+//
+// pi-panel-ctl (running as that user) starts, stops and restarts
+// pi-panel-app@*.service and pi-panel-plugin@*.service over systemd's D-Bus
+// API; the same rule lets `systemctl restart pi-panel-compositor` work over
+// SSH without a password.
+//
+// Installed to /etc/polkit-1/rules.d/ by pi-panel-core's deploy/install.sh.
+polkit.addRule(function(action, subject) {
+    if (action.id != "org.freedesktop.systemd1.manage-units" || subject.user != "pi") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    var unit = action.lookup("unit");
+    var verb = action.lookup("verb");
+    var verbs = ["start", "stop", "restart", "try-restart", "reload",
+                 "reload-or-restart", "reload-or-try-restart", "kill", "reset-failed"];
+    if (unit && /^pi-panel([-@.][A-Za-z0-9_.@:-]*)?\.(service|target)$/.test(unit) &&
+        verbs.indexOf(verb) >= 0) {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

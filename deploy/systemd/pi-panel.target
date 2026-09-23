@@ -1,0 +1,10 @@
+[Unit]
+Description=pi-panel smart display
+Documentation=file:/home/pi/pi-panel-core/README.md
+# The group handle: start/stop/restart this to act on the whole panel.
+#   systemctl restart pi-panel.target
+# Members are PartOf= this target, and are pulled in by WantedBy=. App and
+# plugin units are started by pi-panel-ctl itself, not by the target.
+
+[Install]
+WantedBy=multi-user.target
