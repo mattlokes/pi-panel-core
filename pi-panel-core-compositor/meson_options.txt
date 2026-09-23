@@ -1,0 +1,9 @@
+option('default_ipc_socket',
+  type: 'string',
+  value: '/tmp/pi-panel.sock',
+  description: 'Default IPC socket path')
+
+option('default_config',
+  type: 'string',
+  value: '/etc/pi-panel/compositor.conf',
+  description: 'Default app config file path')

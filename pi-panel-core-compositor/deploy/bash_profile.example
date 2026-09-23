@@ -1,0 +1,19 @@
+# ~/.bash_profile
+#
+# bash reads this INSTEAD of ~/.profile for login shells, so source the stock
+# one first to keep PATH and .bashrc behaviour.
+[ -f "$HOME/.profile" ] && . "$HOME/.profile"
+
+# Start the kiosk compositor on the console only — never over SSH, and never
+# if we are already inside a Wayland session.
+#
+# Deliberately NOT exec'd: when the compositor exits (Ctrl+Alt+Backspace, or
+# `pi_panel_client.py quit`) you drop back to this login shell on tty1. That is
+# the local recovery path, and it stops a failing compositor from turning into
+# an agetty respawn loop.
+if [ -z "$WAYLAND_DISPLAY" ] && [ -z "$SSH_CONNECTION" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    "$HOME/.local/bin/pi-panel-session"
+    echo
+    echo "pi-panel compositor exited — shell on tty1."
+    echo "Restart it with: ~/.local/bin/pi-panel-session"
+fi
