@@ -1,0 +1,61 @@
+/* Shared look of the pi-panel TUIs (pi-panel-ctl tui, pi-panel-pkg tui). */
+
+Screen {
+    layers: base overlay;
+}
+
+#statusbar {
+    height: 1;
+    padding: 0 1;
+    background: $panel;
+    color: $text;
+}
+
+.main-table {
+    height: 1fr;
+    min-height: 6;
+}
+
+#log {
+    height: 10;
+    border-top: solid $primary-darken-2;
+    padding: 0 1;
+}
+
+/* --- modals --- */
+
+ConfirmScreen, FormScreen {
+    align: center middle;
+}
+
+.modal-box {
+    width: 70;
+    height: auto;
+    max-height: 90%;
+    padding: 1 2;
+    background: $surface;
+    border: thick $primary;
+}
+
+.modal-title {
+    width: 100%;
+    padding-bottom: 1;
+}
+
+.modal-buttons {
+    height: auto;
+    align-horizontal: right;
+    padding-top: 1;
+}
+
+.modal-buttons Button {
+    margin-left: 2;
+}
+
+.modal-box Input {
+    margin-bottom: 1;
+}
+
+.field-label {
+    color: $text-muted;
+}

@@ -1,0 +1,29 @@
+[project]
+name = "pi-panel-ctl"
+version = "0.1.0"
+description = "Central control daemon, CLI and TUI for pi-panel"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "pi-panel-varlink",
+    "pi-panel-tui-kit",
+    # systemd unit control and state tracking over D-Bus, on asyncio.
+    "dbus-fast>=2.21",
+    # ctl.toml is read with tomllib; this writes it back after Varlink changes.
+    "tomli-w>=1.0",
+]
+
+[project.scripts]
+pi-panel-ctld = "pi_panel_ctl.daemon:main"
+pi-panel-ctl = "pi_panel_ctl.cli:main"
+
+[tool.uv.sources]
+pi-panel-varlink = { workspace = true }
+pi-panel-tui-kit = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pi_panel_ctl"]

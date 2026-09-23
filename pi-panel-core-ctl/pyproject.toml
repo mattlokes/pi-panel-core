@@ -1,0 +1,20 @@
+# Virtual workspace root: the installable packages live under packages/.
+#
+#   pi-panel-varlink   dependency-free asyncio Varlink client/server, shared by
+#                      every pi-panel component (ctl, pluginman, plugins, apps)
+#   pi-panel-tui-kit   Textual building blocks shared by the ctl and pluginman TUIs
+#   pi-panel-ctl       the central control daemon (pi-panel-ctld) and its CLI/TUI
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["packages"]

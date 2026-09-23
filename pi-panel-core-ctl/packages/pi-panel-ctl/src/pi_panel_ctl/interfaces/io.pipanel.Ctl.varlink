@@ -1,0 +1,126 @@
+# pi-panel-ctl: the central control daemon of a pi-panel.
+#
+# It owns the panel's state: which apps and plugins are enabled and running,
+# and what the display shows and why. What is shown is decided by a priority
+# stack, highest first:
+#
+#   holds      Show() requests, e.g. "doorbell camera for 30s at priority 50";
+#              without seconds a hold lasts until Release(), Next() or Previous()
+#   schedules  time-window rules, e.g. "power off 23:00-06:30"
+#   rotation   the selected playlist, cycling through its mapped apps
+#
+# A hold and a schedule compete on priority; on a tie the hold wins.
+#
+# This is the public API of the panel: the CLI, the TUIs, plugins (MQTT) and
+# apps all use it. The compositor's own socket is private to ctl.
+interface io.pipanel.Ctl
+
+type RotationEntry (app: string, seconds: float)
+
+type Rotation (name: string, entries: []RotationEntry)
+
+type Schedule (
+  name: string,
+  # "daily", "mon-fri", "sat,sun", "mon,wed-fri"
+  days: string,
+  # "HH:MM" local time; an end earlier than the start runs past midnight
+  start: string,
+  end: string,
+  action: (power_off, show, rotation),
+  # for action "show"
+  app: ?string,
+  # for action "rotation"
+  rotation: ?string,
+  priority: int,
+  # output only: whether the rule applies right now
+  active: ?bool
+)
+
+type App (
+  name: string,
+  kind: (app, plugin),
+  version: ?string,
+  description: ?string,
+  enabled: bool,
+  # the systemd unit that runs it, and its ActiveState
+  unit: string,
+  unit_state: string,
+  # apps only: a window is attached, and it is on screen
+  mapped: bool,
+  visible: bool,
+  # the app's own Varlink socket and its interfaces, when it serves one
+  socket: ?string,
+  interfaces: []string
+)
+
+type Hold (
+  token: string,
+  app: string,
+  priority: int,
+  # seconds left; null for a hold that lasts until released
+  expires_in: ?float
+)
+
+type State (
+  showing: ?string,
+  reason: (hold, schedule, rotation, none),
+  output_power: bool,
+  rotation: string,
+  rotation_paused: bool,
+  holds: []Hold,
+  active_schedules: []string,
+  compositor_online: bool
+)
+
+type Event (
+  kind: (snapshot, state_changed, apps_changed, config_changed),
+  state: State,
+  # snapshot and apps_changed
+  apps: ?[]App
+)
+
+method GetState() -> (state: State)
+
+method ListApps() -> (apps: []App)
+
+# Put an app on screen above the rotation (and above schedules of a lower
+# priority). Returns a token for Release(). Default priority is 0.
+method Show(app: string, seconds: ?float, priority: ?int) -> (token: string)
+
+method Release(token: string) -> ()
+
+# Step the rotation. Also drops holds that have no expiry.
+method Next() -> ()
+method Previous() -> ()
+
+method PauseRotation() -> ()
+method ResumeRotation() -> ()
+
+method GetRotations() -> (rotations: []Rotation, selected: string)
+method SetRotation(rotation: Rotation) -> ()
+method RemoveRotation(name: string) -> ()
+method SelectRotation(name: string) -> ()
+
+method GetSchedules() -> (schedules: []Schedule)
+# Add or replace (by name) a schedule rule.
+method SetSchedule(schedule: Schedule) -> ()
+method RemoveSchedule(name: string) -> ()
+
+# Enable starts the package's unit (and registers an app's slot); disable
+# stops it. Persisted in ctl.toml.
+method EnablePackage(name: string, enabled: bool) -> ()
+method RestartPackage(name: string) -> ()
+
+# Re-read the installed packages (pi-panel-pkg calls this after changes).
+method Rescan() -> (apps: []App)
+
+# Stream events; must be called with "more". Starts with a snapshot.
+method Subscribe() -> (event: Event)
+
+error NoSuchApp (app: string)
+error NoSuchRotation (rotation: string)
+error NoSuchSchedule (schedule: string)
+error NoSuchHold (token: string)
+error InvalidRotation (rotation: string, reason: string)
+error InvalidSchedule (schedule: string, reason: string)
+error UnitFailed (unit: string, message: string)

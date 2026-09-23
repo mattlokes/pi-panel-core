@@ -1,0 +1,24 @@
+# The optional control interface of a pi-panel app.
+#
+# An app whose manifest sets `[app] varlink = true` serves this on the socket
+# named by $PI_PANEL_APP_SOCKET (/run/pi-panel/apps/<name>/socket). It may
+# serve its own interfaces alongside; they are listed by
+# org.varlink.service.GetInfo and passed through by pi-panel-ctl.
+interface io.pipanel.App
+
+type Action (
+  # machine name, e.g. "next"
+  name: string,
+  # human label, e.g. "Next photo" (becomes a Home Assistant button)
+  label: string
+)
+
+# Called by pi-panel-ctl whenever the app is shown or hidden (including when
+# the display is powered off). Apps should stop expensive work while hidden.
+method SetVisible(visible: bool) -> ()
+
+method ListActions() -> (actions: []Action)
+
+method InvokeAction(name: string) -> ()
+
+error NoSuchAction (name: string)

@@ -1,0 +1,17 @@
+[project]
+name = "pi-panel-varlink"
+version = "0.1.0"
+description = "Minimal asyncio Varlink client and server for pi-panel"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+# Deliberately no dependencies: apps and plugins pull this in by git URL
+# (#subdirectory=packages/pi-panel-varlink), and it must stay cheap to install
+# on a Pi booting from a slow USB stick.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pi_panel_varlink"]
