@@ -229,7 +229,9 @@ def main() -> int:
         print(f"error: {exc.error.rsplit('.', 1)[-1]} {detail}".rstrip(), file=sys.stderr)
         return 1
     except (VarlinkUnavailable, VarlinkTimeout, ProtocolError) as exc:
-        print(f"cannot reach pi-panel-ctld: {exc}", file=sys.stderr)
+        # `app` and `action` talk to an app's own socket, not to ctld.
+        who = "the app" if args.cmd in ("app", "action") else "pi-panel-ctld"
+        print(f"cannot reach {who}: {exc}", file=sys.stderr)
         return 2
 
 
