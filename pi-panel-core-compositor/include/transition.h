@@ -35,4 +35,7 @@ void transition_finish(struct transition_state *ts);
  * switch fires as soon as the current transition completes. */
 void transition_begin(struct transition_state *ts, struct view *target);
 
+/* Switch immediately, abandoning any fade in progress (and anything queued). */
+void transition_cut(struct transition_state *ts, struct view *target);
+
 #endif /* TRANSITION_H */

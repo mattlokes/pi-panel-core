@@ -68,18 +68,14 @@ struct server {
     struct wl_listener              new_output;
     struct wl_listener              new_xdg_toplevel;
 
-    /* View management */
+    /* Slots (registered over IPC) and views (client windows) */
+    struct wl_list                  slots;       /* list of struct slot */
     struct wl_list                  views;       /* list of struct view */
-    int                             view_count;
-    int                             next_view_id;
+    int                             next_id;     /* shared by slots and views */
     struct view                    *active_view; /* NULL if none */
-    /* False until the controller issues its first switch.  While false, the
-     * first *configured* view is preferred over whichever client wins the
-     * race to map first. */
-    bool                            view_selected_by_user;
 
-    /* Child process management */
-    struct wl_event_source         *sigchld_source;
+    /* Display power, toggled over IPC (e.g. blank at night) */
+    bool                            output_power;
 
     /* Clean shutdown on SIGINT/SIGTERM */
     struct wl_event_source         *sigint_source;
@@ -100,9 +96,8 @@ struct server_config {
 bool server_init(struct server *server, const struct server_config *cfg);
 void server_finish(struct server *server);
 
-/* Called by handle_new_xdg_surface to assign a toplevel to a view slot */
-void server_assign_toplevel(struct server *server,
-                            struct wlr_xdg_toplevel *toplevel,
-                            pid_t client_pid);
+/* Enable or disable every output (display blanking).  Returns false if any
+ * output refused the new state. */
+bool server_set_output_power(struct server *server, bool on);
 
 #endif /* SERVER_H */

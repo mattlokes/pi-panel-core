@@ -1,0 +1,51 @@
+[Unit]
+Description=pi-panel kiosk compositor
+Documentation=file:/home/pi/pi-panel-core/pi-panel-core-compositor/README.md
+PartOf=pi-panel.target
+# The compositor takes over tty1 and needs its logind seat for DRM, so it runs
+# in a PAM session of its own (the pattern cage documents for kiosks).
+After=systemd-user-sessions.service plymouth-quit-wait.service getty@tty1.service
+Conflicts=getty@tty1.service
+# If it fails for good, hand tty1 back to a login prompt: the local recovery
+# path when SSH is not an option.
+OnFailure=getty@tty1.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=notify
+User=pi
+PAMName=pi-panel
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pi-panel-compositor
+UtmpIdentifier=tty1
+UtmpMode=user
+Environment=XDG_SESSION_TYPE=wayland XDG_SESSION_CLASS=user
+Slice=pi-panel.slice
+
+# Written by install.sh: WLR_RENDERER=pixman on Pis without a GPU MMU.
+# Edit it to force a renderer or a DRM device (WLR_DRM_DEVICES=...).
+EnvironmentFile=-/etc/pi-panel/compositor.env
+
+# /run/pi-panel/compositor holds the Varlink socket. Only this leaf is removed
+# when the compositor stops, not the other components' directories.
+RuntimeDirectory=pi-panel/compositor
+RuntimeDirectoryMode=0750
+
+# Points into the build directory on purpose: the development loop is just
+# `ninja -C build && systemctl restart pi-panel-compositor`.
+ExecStart=/home/pi/pi-panel-core/pi-panel-core-compositor/build/pi-panel-compositor \
+          --ipc-socket /run/pi-panel/compositor/io.pipanel.Compositor \
+          --wayland-socket pi-panel-0
+
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=pi-panel.target

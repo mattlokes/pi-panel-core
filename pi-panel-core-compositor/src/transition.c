@@ -4,6 +4,7 @@
 #include <wlr/util/log.h>
 
 #include "server.h"
+#include "ipc.h"
 #include "view.h"
 #include "transition.h"
 
@@ -47,6 +48,7 @@ static int transition_tick(void *data) {
             wlr_scene_node_set_enabled(&server->fade_rect->node, false);
             ts->active = false;
             ts->phase  = TRANSITION_IDLE;
+            ipc_event(server, "transition_finished");
 
             /* If a switch was queued while we were running, start it now */
             if (ts->pending) {
@@ -93,12 +95,27 @@ void transition_finish(struct transition_state *ts) {
     ts->pending = NULL;
 }
 
-void transition_begin(struct transition_state *ts, struct view *target) {
+void transition_cut(struct transition_state *ts, struct view *target) {
     struct server *server = ts->server;
 
-    /* The controller has now chosen a view, so stop preferring the first
-     * configured one when other clients finish mapping. */
-    server->view_selected_by_user = true;
+    if (ts->active) {
+        /* Abandon the fade in progress: the cut wins, and nothing queued
+         * behind it should fire afterwards. */
+        wl_event_source_timer_update(ts->timer, 0);
+        if (server->fade_rect) {
+            wlr_scene_node_set_enabled(&server->fade_rect->node, false);
+        }
+        ts->active  = false;
+        ts->phase   = TRANSITION_IDLE;
+        ts->target  = NULL;
+        ts->pending = NULL;
+        ipc_event(server, "transition_finished");
+    }
+    view_activate(target);
+}
+
+void transition_begin(struct transition_state *ts, struct view *target) {
+    struct server *server = ts->server;
 
     /* No-op if already showing this view */
     if (!ts->active && target == server->active_view) {
@@ -134,7 +151,9 @@ void transition_begin(struct transition_state *ts, struct view *target) {
 
     /* Kick off the timer */
     wl_event_source_timer_update(ts->timer, TRANSITION_FRAME_MS);
+    ipc_event(server, "transition_started");
 
+    char buf[32];
     wlr_log(WLR_DEBUG, "Transition started → view id=%d name='%s'",
-        target->id, target->name ? target->name : "(anon)");
+        target->id, view_name(target, buf, sizeof(buf)));
 }

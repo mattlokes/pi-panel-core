@@ -1,39 +1,47 @@
-# pi-panel-compositor
+# pi-panel-core-compositor
 
-A [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots)-based Wayland compositor for kiosk-style interfaces.  
-Built for and on the Raspberry Pi 5 (Raspberry Pi OS / Debian 13 trixie, arm64) with touchscreen support.
+A [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots) kiosk compositor for
+pi-panel. It shows one fullscreen window at a time, fades between them, and is
+controlled over [Varlink](https://varlink.org).
+
+Built for the Raspberry Pi 5 (Raspberry Pi OS / Debian 13 trixie, arm64).
+
+It is deliberately display-only: it has **no configuration and launches
+nothing**. [pi-panel-core-ctl](../pi-panel-core-ctl) registers named slots, and
+systemd runs each app as `pi-panel-app@<name>.service`. When an app's window
+appears, the compositor reads the client process's cgroup, sees the unit it
+runs in, and puts the window in that slot.
+
+```
+pi-panel-ctl ──Varlink──▶ compositor  ◀──Wayland── pi-panel-app@immich.service
+  RegisterSlot("immich")    slot "immich" ◀── window from that unit's cgroup
+  Switch("immich")          fade to it
+  Subscribe()               ◀── pushed events
+```
 
 ## Features
 
-- **Kiosk mode** — all windows are forced fullscreen; no decorations or taskbar
-- **View system** — multiple named "views", each containing one fullscreen application; only one view visible at a time
-- **Smooth transitions** — fade-to-black → switch → fade-in animation (~500 ms per half)
-- **Unix socket IPC** — line-based protocol lets a Python script switch views, launch apps, query status
-- **App launcher** — compositor can fork/exec configured apps and auto-restart them on exit
-- **Touchscreen** — full touch forwarding to the active view
-- **Backend auto-detection** — nested window under X11/Wayland (development) or DRM/KMS takeover (Pi production)
+- **Kiosk mode**: every window is forced fullscreen, with no decorations.
+- **Dynamic slots**: slots are created over IPC and matched by systemd unit, with Wayland `app_id` as a fallback.
+- **Transitions**: fade to black and back (about 500 ms each way), or an instant cut.
+- **Display power**: turn the output off and on, e.g. for night time.
+- **Varlink IPC**: introspectable, with a push-based `Subscribe` and no polling.
+- **Touchscreen forwarding** to the visible window. This has not been tested on hardware yet.
 
 ## Requirements
-
-- **wlroots 0.19** (0.19.1 is what Raspberry Pi OS trixie ships, and what
-  labwc on the stock desktop already uses)
-- wayland-server, libxkbcommon, pixman
-- wayland-protocols + wayland-scanner (`xdg-shell-protocol.h` is generated at
-  build time — it is not shipped by any package)
-- meson + ninja
-
-### Raspberry Pi OS (Debian 13 trixie)
 
 ```bash
 sudo apt install libwlroots-0.19-dev libwayland-dev libwayland-bin \
                  wayland-protocols libxkbcommon-dev libpixman-1-dev \
-                 libdrm-dev meson ninja-build pkg-config
+                 libdrm-dev meson ninja-build pkg-config python3
 ```
 
-> The `libwlroots-0.19-dev` package comes from the `archive.raspberrypi.com`
-> repository, which is already configured on Raspberry Pi OS. Plain Debian
-> trixie only carries 0.18 — if you ever build elsewhere, you would need to
-> retarget or add that archive.
+`libwlroots-0.19-dev` comes from `archive.raspberrypi.com`, which Raspberry Pi
+OS already has configured. Plain Debian trixie only carries 0.18.
+
+[cJSON](https://github.com/DaveGamble/cJSON) 1.7.18 (MIT) is vendored in
+`src/vendor/`. That keeps the build free of libsystemd, and free of anything
+that would need an `apt install`.
 
 ## Build
 
@@ -42,198 +50,83 @@ meson setup build/
 ninja -C build/
 ```
 
-## Configuration
-
-Create `/etc/pi-panel/compositor.conf` (or pass `--config FILE`):
-
-```
-# name  auto-restart  command
-dashboard  yes  python3 /home/pi/apps/dashboard.py
-browser    no   chromium-browser --kiosk http://localhost:3000
-```
-
-See `example.conf` for details.  The compositor sets `WAYLAND_DISPLAY`
-automatically and unsets `DISPLAY` in each child process.
-
 ## Running
 
-### Development (nested inside the Pi desktop)
+In production it runs as `pi-panel-compositor.service` under `pi-panel.target`.
+The root [`deploy/install.sh`](../deploy/install.sh) installs it.
 
-The stock Raspberry Pi OS desktop is itself a Wayland session (labwc), so the
-quickest edit/run loop is to run the compositor nested in a window there:
-
-```bash
-WLR_BACKENDS=wayland ./build/pi-panel-compositor --debug
-```
-
-Launch test apps into the compositor (use whatever Wayland socket was printed):
-
-```bash
-WAYLAND_DISPLAY=wayland-1 foot --app-id=dashboard
-WAYLAND_DISPLAY=wayland-1 foot --app-id=browser
-```
-
-### Production (bare DRM/KMS, from a TTY)
-
-```bash
-sudo usermod -aG video,render,input $USER   # once, then re-login
-./build/pi-panel-compositor --config /etc/pi-panel/compositor.conf
-
-# Force a specific DRM node if needed:
-WLR_DRM_DEVICES=/dev/dri/card1 WLR_RENDERER=gles2 \
-    ./build/pi-panel-compositor
-```
-
-## IPC Python Client
-
-```bash
-python3 client/pi_panel_client.py list
-python3 client/pi_panel_client.py switch 0
-python3 client/pi_panel_client.py switch-name dashboard
-python3 client/pi_panel_client.py switch-app com.example.app
-python3 client/pi_panel_client.py launch myapp "python3 /opt/apps/myapp.py"
-python3 client/pi_panel_client.py close myapp
-python3 client/pi_panel_client.py restart myapp
-python3 client/pi_panel_client.py status
-```
-
-As a library:
-
-```python
-from pi_panel_client import PiPanelClient
-
-c = PiPanelClient()               # connects to /tmp/pi-panel.sock
-c.switch_name("dashboard")        # fade transition to dashboard view
-views = c.list_views()            # list of dicts
-c.launch("video", "mpv --fullscreen /media/clip.mp4")
-```
-
-## Setting app_id for Python/SDL2 apps
-
-```python
-import os
-os.environ['SDL_VIDEODRIVER']          = 'wayland'
-os.environ['SDL_VIDEO_WAYLAND_APP_ID'] = 'my-dashboard'
-import pygame
-```
-
-The compositor assigns clients to view slots by **matching the client's process
-against the process it launched**, walking up the process tree — so an app
-behind a wrapper script still lands in its configured slot, and `app_id` is not
-required. It does improve `switch-app` and `list` output, though.
-
-Each view is launched in its own session, so `close` and `restart` signal the
-whole process group and take a forking wrapper down along with the app it
-spawned. The one case matching cannot cover is a fully re-parented orphan (the
-launched process exits while the GUI process keeps running); such a client
-lands in an anonymous view.
-
-## Which view is visible at startup
-
-Clients race to map, so "first to map" is not a stable default. Until the
-controller issues its first `switch`, the compositor keeps the **first view in
-config order** visible, correcting itself if a later-configured client happens
-to map first. Something is shown as soon as any client maps, so the panel is
-never needlessly black. After an explicit switch, the compositor stops
-overriding your choice.
-
-## IPC Protocol Reference
-
-Text line-based over `AF_UNIX SOCK_STREAM` (default: `/tmp/pi-panel.sock`).
-
-| Command | Response |
+| File | Installs to |
 |---|---|
-| `switch <id>` | `OK` or `ERROR ...` |
-| `switch-name <name>` | `OK` or `ERROR ...` |
-| `switch-app <app_id>` | `OK` or `ERROR ...` |
-| `launch <name> <command>` | `OK id=N` or `ERROR ...` |
-| `close <name\|id>` | `OK` or `ERROR ...` |
-| `restart <name\|id>` | `OK pid=N` or `ERROR ...` |
-| `list` | `DATA N` + N lines + `END` |
-| `status` | `OK active_id=N active_name=X view_count=N transitioning=false output=NAME output_width=W output_height=H refresh=HZ` |
-| `version` | `OK pi-panel-compositor/1.0 protocol/1` |
-| `quit` | `OK`, then the compositor shuts down cleanly |
+| `deploy/systemd/pi-panel-compositor.service` | `/etc/systemd/system/` |
+| `deploy/pam.d/pi-panel` | `/etc/pam.d/pi-panel` |
+
+The unit takes over tty1 with a logind session of its own (`PAMName=`,
+`TTYPath=`), which is what gives it DRM access, and it signals readiness with
+`Type=notify`. If it fails repeatedly, `OnFailure=` brings back a login prompt
+on tty1.
+
+```bash
+systemctl restart pi-panel-compositor
+journalctl -u pi-panel-compositor -b
+```
+
+### Development: a headless second instance
+
+No root is needed, and the live panel is not disturbed:
+
+```bash
+systemd-run --user --unit pp-dev -E WLR_BACKENDS=headless -E WLR_RENDERER=pixman \
+    $PWD/build/pi-panel-compositor --ipc-socket /tmp/c.varlink --wayland-socket pp-dev-0 --debug
+
+varlinkctl call /tmp/c.varlink io.pipanel.Compositor.RegisterSlot '{"name":"a"}'
+systemd-run --user --unit pi-panel-app@a -E WAYLAND_DISPLAY=pp-dev-0 foot
+varlinkctl call -j /tmp/c.varlink io.pipanel.Compositor.ListSlots '{}'
+```
+
+A `systemd-run --user` unit named `pi-panel-app@a` matches slot `a` exactly as
+the real system unit would.
+
+## Varlink interface
+
+The interface is `io.pipanel.Compositor`, defined in
+[`src/io.pipanel.Compositor.varlink`](src/io.pipanel.Compositor.varlink). The
+file is compiled into the binary, so you can always read the live version with:
+
+```bash
+varlinkctl introspect /run/pi-panel/compositor/io.pipanel.Compositor io.pipanel.Compositor
+```
+
+| Method | Purpose |
+|---|---|
+| `RegisterSlot(name, match_unit?, match_app_id?)` | Create a slot, or update an existing one. It adopts any matching unregistered window. |
+| `UnregisterSlot(name)` | Forget a slot. Its window becomes `anon-<id>`. |
+| `ListSlots()` / `GetStatus()` | Current state. |
+| `Switch(slot, transition?)` | Show a slot, with a fade (the default) or a cut. |
+| `SetOutputPower(on)` | Blank or unblank the display. |
+| `Subscribe()` | Needs `more`. Sends a snapshot, then one event per change. |
+| `Quit()` | Clean shutdown. |
+
+A window that matches no slot is listed as `anon-<id>` and is never shown on
+its own; switch to it explicitly to see it. If nothing is visible, the first
+*registered* window to map is shown, so the panel does not sit black while the
+controller is down.
+
+The socket is `0660`. A subscriber more than 256 KiB behind is disconnected
+rather than allowed to stall the compositor.
 
 ## Keybindings
 
-The compositor forwards essentially every key to the focused application — it
-is a kiosk. The one exception is the escape hatch:
+Almost every key is forwarded to the visible window. The one escape hatch is
+`Ctrl+Alt+Backspace`, which quits the compositor; systemd then restarts it.
+Under systemd, `systemctl stop pi-panel.target` is the way to stop the panel.
 
-| Key | Action |
-|---|---|
-| `Ctrl+Alt+Backspace` | Quit the compositor |
-
-It also exits cleanly on `SIGINT` / `SIGTERM`, and on the `quit` IPC command,
-so it can always be stopped over SSH:
-
-```bash
-python3 client/pi_panel_client.py quit     # or: pkill -TERM pi-panel-compositor
-```
-
-## Running as the default session
-
-To replace the desktop with the kiosk on boot, without a display manager:
-
-1. Put the launcher at `~/.local/bin/pi-panel-session`. It sets
-   `WLR_RENDERER=pixman` on Pis with no GPU MMU, then execs the compositor
-   under `systemd-cat` so its output goes to the journal instead of scrolling
-   over tty1:
-
-   ```sh
-   exec systemd-cat --identifier=pi-panel --level-prefix=true \
-       "$HOME/pi-panel-compositor/build/pi-panel-compositor" \
-       --config "$HOME/.config/pi-panel/compositor.conf" "$@"
-   ```
-2. Have `~/.bash_profile` run it on tty1 only:
-
-   ```sh
-   [ -f "$HOME/.profile" ] && . "$HOME/.profile"
-   if [ -z "$WAYLAND_DISPLAY" ] && [ -z "$SSH_CONNECTION" ] && [ "$(tty)" = "/dev/tty1" ]; then
-       "$HOME/.local/bin/pi-panel-session"
-   fi
-   ```
-
-   Do **not** `exec` it: exiting the compositor should return you to a shell on
-   tty1, which is the local recovery path and avoids an agetty respawn loop if
-   the compositor fails to start.
-3. Boot to console instead of the desktop:
-
-   ```bash
-   sudo systemctl set-default multi-user.target
-   ```
-
-Raspberry Pi OS already autologins `pi` on tty1, and lightdm is only
-`WantedBy=graphical.target`, so it stops starting on its own — no need to
-disable it. To go back to the desktop:
-
-```bash
-sudo systemctl set-default graphical.target && sudo reboot
-```
-
-## Logging
-
-By default the compositor uses the standard wlroots logger on stderr. When
-stderr is a journal stream — systemd sets `JOURNAL_STREAM`, and `systemd-cat`
-does too — it instead prefixes each line with a `<N>` syslog level, so
-journald records real priorities rather than filing everything as `info`.
-Pair it with `systemd-cat --level-prefix=true`, as the session launcher does:
-
-```bash
-journalctl -t pi-panel -b        # this boot
-journalctl -t pi-panel -f        # follow live
-journalctl -t pi-panel -p err    # errors only
-```
-
-Journald storage is persistent on Raspberry Pi OS, so the log from a boot that
-failed is still readable after the next one.
-
-## Useful Environment Variables
+## Environment variables
 
 | Variable | Purpose |
 |---|---|
-| `WLR_BACKENDS` | Force backend: `x11`, `wayland`, `drm`, `headless` |
+| `WLR_BACKENDS` | Force a backend: `drm`, `headless`, `wayland`, `x11` |
 | `WLR_DRM_DEVICES` | Colon-separated DRM node paths |
-| `WLR_RENDERER` | Force renderer: `gles2`, `vulkan`, `pixman` |
-| `WLR_NO_HARDWARE_CURSORS=1` | Disable hardware cursor plane (fixes flicker) |
-| `WLR_LOG_LEVEL` | `debug`, `info`, `error` |
-| `WAYLAND_DEBUG=1` | Log Wayland protocol messages |
+| `WLR_RENDERER` | Force a renderer: `gles2`, `vulkan`, `pixman` |
+| `WLR_NO_HARDWARE_CURSORS=1` | Disable the hardware cursor plane |
+
+For the service, put these in `/etc/pi-panel/compositor.env`.

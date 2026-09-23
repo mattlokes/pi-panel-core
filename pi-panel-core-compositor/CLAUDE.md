@@ -1,94 +1,69 @@
-# pi-panel-compositor
+# pi-panel-core-compositor
 
-A wlroots kiosk compositor. Shows one fullscreen app ("view") at a time, fades
-between them, and is driven over a Unix-socket IPC protocol.
+A wlroots kiosk compositor with no configuration of its own. It shows one
+fullscreen window at a time and is driven over Varlink (`io.pipanel.Compositor`)
+by pi-panel-core-ctl. Slots are registered at runtime and matched to windows by
+the client's systemd unit.
 
 ## The target
 
-**It does not build or run on macOS.** Everything happens on `pi@jazz`
-(Raspberry Pi 5, Raspberry Pi OS / Debian 13 trixie, arm64). See the
-`remote-target` skill for how to drive it over SSH — in particular, do not run
-process patterns inline over `ssh`, they match your own session.
+The compositor builds only on `pi@jazz` (Raspberry Pi 5, trixie, arm64). The dev
+machine has no wlroots or meson. Sync and build like this:
 
 ```bash
-rsync -a --delete --exclude '.git' --exclude 'build' ./ pi@jazz:~/pi-panel-compositor/
-rrun pi@jazz <<'EOF'
-cd ~/pi-panel-compositor && ninja -C build 2>&1 | tail -5
-EOF
+rsync -a --delete --exclude .git --exclude build ./ pi@jazz:~/pi-panel-core/pi-panel-core-compositor/
+ssh pi@jazz 'cd ~/pi-panel-core/pi-panel-core-compositor && ninja -C build 2>&1 | tail -5'
 ```
 
-`sudo` on jazz needs a password, so anything privileged goes back to the user.
+The general jazz notes are in the root [CLAUDE.md](../CLAUDE.md).
 
-## It is NOT a systemd unit — this has cost hours, twice
+- Do not run process-name patterns (`pgrep -f …`) inline over SSH, because they match your own session. Use `systemctl`/`systemd-run --user` units instead.
+- `sudo` on jazz needs a password, so anything privileged goes back to the user.
 
-The compositor is started from `~/.bash_profile` on **tty1**, so:
+## Running and restarting
 
-- **Rebuilding does not change the running process.** A fix can be built,
-  deployed and still absent from what is running. Symptoms look exactly like
-  "the fix didn't work". Always check first:
-  ```bash
-  rrun pi@jazz <<'EOF'
-  ps -o lstart= -p "$(pgrep -f 'pi-panel-compositor --config' | head -1)"
-  stat -c %y ~/pi-panel-compositor/build/pi-panel-compositor
-  EOF
-  ```
-  A binary newer than the process means you are testing old code.
-
-- **It cannot be restarted over SSH.** It needs tty1's logind seat for DRM. Ask
-  the user to press `Ctrl+Alt+Backspace` (the quit binding) and then run
-  `~/.local/bin/pi-panel-session`, or reboot.
-
-To develop without disturbing the live kiosk, run a second instance headless:
-`WLR_BACKENDS=headless WLR_RENDERER=pixman ./build/pi-panel-compositor --ipc-socket /tmp/test.sock`.
-
-## Logs and control
+It is `pi-panel-compositor.service`, part of `pi-panel.target`:
 
 ```bash
-journalctl -t pi-panel -b          # this boot; -f to follow, -p err for errors
-python3 client/pi_panel_client.py list | status | switch-name NAME | quit
+systemctl restart pi-panel-compositor          # no password: polkit rule from core-ctl
+journalctl -u pi-panel-compositor -b
 ```
 
-The compositor emits `<N>` syslog prefixes only when `JOURNAL_STREAM` is set, so
-a terminal run looks normal while the service run gets real priorities.
+`ExecStart` points into `build/`. After `ninja`, the new binary runs only once
+the unit restarts. If a fix "didn't work", check that the process is newer than
+the binary.
+
+To test without touching the live panel, run a headless instance plus apps as
+`systemd-run --user` units. The README has the recipe. A user unit named
+`pi-panel-app@a` exercises exactly the same cgroup matching as the real system
+unit.
+
+## Design points worth preserving
+
+- **Slots and views are separate structs** (`slot.c`, `view.c`). A slot outlives its window. Adopting an unregistered window is just `view->slot = slot`. Views share one id counter with slots.
+- **The unit comes from `/proc/<pid>/cgroup`.** Take the innermost `.service`/`.scope` component. This replaced both the old process-tree walk and fork-parent tracking. It works through wrappers like `uv run`.
+- **App_id arrives late.** It usually comes after `new_toplevel`, so `set_app_id` retries adoption.
+- **Unregistered windows never show themselves.** The only automatic switch is "nothing visible and a *registered* window maps".
+- **Emit events before mutating.** `ipc_event_*` encodes immediately. For example, send `slot_removed` for `anon-N` *before* setting `view->slot`.
+- **Clients are closed only from an idle callback** (`client_doom` → `reap_doomed`), never under a handler or a broadcast loop.
+- **A Subscribe never ends.** Any further call on that connection drops the client. A subscriber more than `IPC_OUT_MAX` behind is dropped, never waited on.
+- **The interface file is the source of truth.** `tools/embed.py` compiles `src/io.pipanel.Compositor.varlink` into the binary. Edit the file, not a C string.
 
 ## wlroots 0.19 specifics
 
-Built against **0.19.1**, the version already on the Pi (labwc uses it). Not 0.17
-or 0.18 — the API differs in ways that compile-fail loudly *and* quietly:
+The compositor builds against **0.19.1**, which is the version on the Pi. The API differs from 0.17 and 0.18 in ways that fail both loudly and quietly:
 
-- map/unmap live on `wlr_surface.events`, **not** `wlr_xdg_surface.events`.
-- `wlr_scene_xdg_surface_create()` returns `wlr_scene_tree *`; there is no
-  `struct wlr_scene_xdg_surface` (a pointer to it compiles fine as an
-  incomplete type, and is wrong).
-- Bind `xdg_shell.events.new_toplevel`, **not** `.new_surface` — the latter
-  fires before the client binds a role, so a toplevel-only handler silently
-  drops every window.
-- Do not configure a toplevel before the client's initial commit; wlroots
-  asserts. Send the fullscreen configure from a `surface.events.commit` handler
-  gated on `base->initial_commit`.
-- Unlink **every** listener in the toplevel destroy handler — wlroots asserts
-  the listener lists are empty before freeing, so a missed one aborts the whole
-  compositor when a view closes.
+- Map/unmap live on `wlr_surface.events`, **not** `wlr_xdg_surface.events`.
+- `wlr_scene_xdg_surface_create()` returns `wlr_scene_tree *`.
+- Bind `xdg_shell.events.new_toplevel`, **not** `.new_surface`.
+- Do not configure a toplevel before its initial commit, or wlroots asserts. Configure from the commit handler, gated on `base->initial_commit`.
+- Unlink **every** listener in the toplevel destroy handler, and in `view_free_all`. Otherwise wlroots asserts on free.
 
-Build essentials that are easy to miss: `-DWLR_USE_UNSTABLE` is mandatory;
-`xdg-shell-protocol.h` is generated by `wayland-scanner` (no package ships it);
-`c_std=gnu11` plus `-D_GNU_SOURCE` (strict c11 hides `strdup`/`setenv`/`kill`,
-and `accept4` needs `_GNU_SOURCE` specifically).
-
-## Launching apps as views
-
-`view_launch()` forks, `setsid()`s, **clears the inherited signal mask**, and
-execs `/bin/sh -c`. The mask reset matters: libwayland blocks SIGINT/TERM/CHLD
-for signalfd, and a blocked mask survives exec — without clearing it, launched
-apps can never receive SIGTERM and `close`/`restart` silently do nothing.
-`foot` clears its own mask and hides this; most apps do not.
-
-View assignment matches the client PID **or any ancestor**, so an app behind a
-forking wrapper still reaches its configured slot. `view_terminate()` signals
-the whole process group, so a wrapper and the app it spawned die together.
+Build essentials:
+- `-DWLR_USE_UNSTABLE`.
+- `xdg-shell-protocol.h` is generated by `wayland-scanner`.
+- `c_std=gnu11` plus `-D_GNU_SOURCE`.
 
 ## Untested
 
-Touch input has never been exercised. Everything else — startup, transitions,
-launch/close/restart, auto-restart, all four exit paths — has been run on real
-hardware.
+Touch input and the DRM/logind session under the systemd unit have not been exercised on hardware. Everything else was tested headless on jazz, including the IPC hostile cases (garbage, an oversized message, a stalled subscriber).

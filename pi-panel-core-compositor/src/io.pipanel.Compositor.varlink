@@ -1,0 +1,92 @@
+# pi-panel-compositor: a kiosk compositor showing one fullscreen view at a time.
+#
+# The compositor has no configuration. A controller (pi-panel-ctl) registers
+# named slots; a client window is placed in a slot when its process runs in the
+# slot's systemd unit (match_unit, default "pi-panel-app@<name>.service") or,
+# failing that, reports a matching Wayland app_id (match_app_id).
+#
+# A window that matches no slot is listed as an unregistered "anon-<id>" slot
+# and stays hidden unless switched to explicitly. Registering a slot adopts any
+# such window that matches it.
+interface io.pipanel.Compositor
+
+type Output (
+  name: ?string,
+  width: int,
+  height: int,
+  # Hz; 0 when the backend does not report one (headless, nested)
+  refresh: float
+)
+
+type Slot (
+  id: int,
+  name: string,
+  registered: bool,
+  match_unit: ?string,
+  match_app_id: ?string,
+  # true while a client window is attached and has committed a buffer
+  mapped: bool,
+  active: bool,
+  # the attached window's details, when there is one
+  app_id: ?string,
+  title: ?string,
+  unit: ?string
+)
+
+type Status (
+  # name of the visible slot, if any
+  active: ?string,
+  transitioning: bool,
+  output_power: bool,
+  output: ?Output
+)
+
+type Event (
+  kind: (
+    snapshot,
+    slot_added,
+    slot_removed,
+    slot_mapped,
+    slot_unmapped,
+    slot_updated,
+    active_changed,
+    transition_started,
+    transition_finished,
+    output_power_changed
+  ),
+  # every event carries the current status
+  status: Status,
+  # snapshot only: every slot
+  slots: ?[]Slot,
+  # slot_* events: the slot concerned
+  slot: ?Slot
+)
+
+# Create a slot, or return the existing one of that name. Registering again
+# with different matchers updates them.
+method RegisterSlot(name: string, match_unit: ?string, match_app_id: ?string) -> (slot: Slot)
+
+# Forget a slot. An attached window becomes an unregistered slot again.
+method UnregisterSlot(name: string) -> ()
+
+method ListSlots() -> (slots: []Slot)
+
+method GetStatus() -> (status: Status)
+
+# Show a slot, by name, "anon-<id>", or numeric id. "fade" (the default) fades
+# through black; "cut" switches at once. Switching to the visible slot is a no-op.
+method Switch(slot: string, transition: ?(fade, cut)) -> ()
+
+# Turn the display off (blank, e.g. at night) and on again.
+method SetOutputPower(on: bool) -> ()
+
+# Shut the compositor down cleanly.
+method Quit() -> ()
+
+# Stream events; must be called with "more". The first reply is a snapshot of
+# every slot, followed by one reply per change.
+method Subscribe() -> (event: Event)
+
+error NoSuchSlot (slot: string)
+error SlotNotMapped (slot: string)
+error InvalidName (name: string)

@@ -1,0 +1,10 @@
+# PAM stack for pi-panel-compositor.service (PAMName=pi-panel).
+#
+# systemd only runs the account and session phases for a service. The line
+# that matters is pam_systemd: it registers a logind session on tty1, which
+# gives the compositor its seat (DRM and input access) and creates
+# XDG_RUNTIME_DIR (/run/user/<uid>), where the Wayland socket lives.
+auth     required  pam_unix.so nullok
+account  required  pam_unix.so
+session  required  pam_unix.so
+session  required  pam_systemd.so

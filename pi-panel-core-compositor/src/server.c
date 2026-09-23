@@ -2,7 +2,6 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
-#include <sys/wait.h>
 #include <signal.h>
 
 #include <wayland-server-core.h>
@@ -18,6 +17,7 @@
 #include <wlr/util/log.h>
 
 #include "server.h"
+#include "slot.h"
 #include "view.h"
 
 /* ---------------------------------------------------------------------------
@@ -154,41 +154,13 @@ static void handle_new_xdg_toplevel(struct wl_listener *listener, void *data) {
     struct server           *server   = wl_container_of(listener, server, new_xdg_toplevel);
     struct wlr_xdg_toplevel *toplevel = data;
 
-    /* Retrieve the PID of the connecting client for view-slot matching */
+    /* The client's pid leads to its systemd unit, which picks its slot. */
     pid_t pid = 0;
     struct wl_client *wl_client =
         wl_resource_get_client(toplevel->base->resource);
     wl_client_get_credentials(wl_client, &pid, NULL, NULL);
 
-    server_assign_toplevel(server, toplevel, pid);
-}
-
-/* ---------------------------------------------------------------------------
- * SIGCHLD handler — reaps children, clears view->pid
- * ---------------------------------------------------------------------------*/
-
-static int handle_sigchld(int sig, void *data) {
-    (void)sig;
-    struct server *server = data;
-    int    status;
-    pid_t  pid;
-
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        struct view *view = view_for_pid(server, pid);
-        if (view) {
-            wlr_log(WLR_INFO, "View '%s' (pid %d) exited",
-                view->name ? view->name : "(anon)", pid);
-            view->pid = 0;
-            /* Auto-restart: re-launch only if the XDG surface has already
-             * cleaned itself up (handle_view_destroy clears xdg_toplevel).
-             * Otherwise we wait for the destroy signal to trigger launch. */
-            if (view->auto_restart && !view->xdg_toplevel) {
-                wlr_log(WLR_INFO, "Auto-restarting view '%s'", view->name);
-                view_launch(view);
-            }
-        }
-    }
-    return 0;
+    view_create(server, toplevel, pid);
 }
 
 /* ---------------------------------------------------------------------------
@@ -203,33 +175,37 @@ static int handle_terminate_signal(int sig, void *data) {
 }
 
 /* ---------------------------------------------------------------------------
- * server_assign_toplevel  (called from handle_new_xdg_toplevel)
+ * Output power
  * ---------------------------------------------------------------------------*/
 
-void server_assign_toplevel(struct server *server,
-                             struct wlr_xdg_toplevel *toplevel,
-                             pid_t client_pid) {
-    /* Find the managed slot that owns this client's process.  Matching walks
-     * up the process tree, so a client behind a wrapper script — or a shell
-     * that forked instead of exec'ing — still lands in its configured slot. */
-    struct view *view = NULL;
-    if (client_pid > 0) {
-        view = view_for_pid_or_ancestor(server, client_pid);
-        if (view && view->xdg_toplevel) {
-            /* Slot already has a surface — this is a second window from the
-             * same app, so don't steal it. */
-            view = NULL;
+bool server_set_output_power(struct server *server, bool on) {
+    bool ok = true;
+    struct output *out;
+    wl_list_for_each(out, &server->outputs, link) {
+        struct wlr_output_state state;
+        wlr_output_state_init(&state);
+        wlr_output_state_set_enabled(&state, on);
+        if (on) {
+            /* A disabled output may have dropped its mode; ask for the
+             * preferred one again, as at startup. */
+            struct wlr_output_mode *mode = wlr_output_preferred_mode(out->wlr_output);
+            if (mode) {
+                wlr_output_state_set_mode(&state, mode);
+            }
         }
+        if (!wlr_output_commit_state(out->wlr_output, &state)) {
+            wlr_log(WLR_ERROR, "Failed to turn output %s %s",
+                out->wlr_output->name, on ? "on" : "off");
+            ok = false;
+        }
+        wlr_output_state_finish(&state);
     }
-
-    if (view) {
-        wlr_log(WLR_DEBUG, "Attaching PID %d to managed view '%s'",
-            client_pid, view->name ? view->name : "(anon)");
-        view_attach_toplevel(view, toplevel);
-    } else {
-        wlr_log(WLR_DEBUG, "Creating anonymous view for PID %d", client_pid);
-        view_create_anonymous(server, toplevel);
+    if (ok && server->output_power != on) {
+        server->output_power = on;
+        wlr_log(WLR_INFO, "Output power %s", on ? "on" : "off");
+        ipc_event(server, "output_power_changed");
     }
+    return ok;
 }
 
 /* ---------------------------------------------------------------------------
@@ -238,9 +214,11 @@ void server_assign_toplevel(struct server *server,
 
 bool server_init(struct server *server, const struct server_config *cfg) {
     wl_list_init(&server->outputs);
+    wl_list_init(&server->slots);
     wl_list_init(&server->views);
-    server->next_view_id = 0;
+    server->next_id      = 1;
     server->active_view  = NULL;
+    server->output_power = true;
 
     /* 1. Create Wayland display and event loop */
     server->display    = wl_display_create();
@@ -330,10 +308,8 @@ bool server_init(struct server *server, const struct server_config *cfg) {
     /* 11. Transition engine */
     transition_init(&server->transition, server);
 
-    /* 12. Signal handlers: reap children, and exit cleanly on INT/TERM so
-     *     server_finish() runs and the IPC socket is unlinked. */
-    server->sigchld_source = wl_event_loop_add_signal(
-        server->event_loop, SIGCHLD, handle_sigchld, server);
+    /* 12. Exit cleanly on INT/TERM so server_finish() runs and the IPC socket
+     *     is unlinked.  (systemd stops us with SIGTERM.) */
     server->sigint_source = wl_event_loop_add_signal(
         server->event_loop, SIGINT, handle_terminate_signal, server);
     server->sigterm_source = wl_event_loop_add_signal(
@@ -375,10 +351,6 @@ void server_finish(struct server *server) {
     ipc_finish(&server->ipc);
     input_finish(&server->input);
 
-    if (server->sigchld_source) {
-        wl_event_source_remove(server->sigchld_source);
-        server->sigchld_source = NULL;
-    }
     if (server->sigint_source) {
         wl_event_source_remove(server->sigint_source);
         server->sigint_source = NULL;
@@ -395,11 +367,9 @@ void server_finish(struct server *server) {
     wl_list_remove(&server->new_output.link);
     wl_list_remove(&server->new_xdg_toplevel.link);
 
-    /* Destroy all views */
-    struct view *view, *tmp;
-    wl_list_for_each_safe(view, tmp, &server->views, link) {
-        view_free(view);
-    }
+    /* Destroy all views and slots */
+    view_free_all(server);
+    slot_free_all(server);
 
     /* Destroy outputs.  Unhook each output's listeners first — both for the
      * assertion above, and so tearing down the backend cannot re-enter

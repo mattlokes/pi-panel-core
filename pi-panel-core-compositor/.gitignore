@@ -1,5 +1,7 @@
 # Prerequisites
 *.d
+# ...but not the PAM config directory
+!deploy/pam.d/
 
 # Object files
 *.o
