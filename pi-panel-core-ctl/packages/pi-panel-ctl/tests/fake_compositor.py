@@ -21,10 +21,14 @@ method ListSlots() -> (slots: []object)
 method GetStatus() -> (status: object)
 method Switch(slot: string, transition: ?string) -> ()
 method SetOutputPower(on: bool) -> ()
+method SetClock(enabled: bool, format: ?string, position: ?string, size: ?int) -> (clock: object)
 method Subscribe() -> (event: object)
 error NoSuchSlot (slot: string)
 error SlotNotMapped (slot: string)
+error ClockUnavailable (reason: string)
 """
+
+DEFAULT_CLOCK = {"enabled": False, "format": "%H:%M", "position": "bottom_right", "size": 0}
 
 
 class FakeCompositor:
@@ -34,6 +38,9 @@ class FakeCompositor:
         self.active: str | None = None
         self.power = True
         self.switches: list[tuple[str, str]] = []
+        self.clock = dict(DEFAULT_CLOCK)
+        self.clock_calls: list[dict[str, Any]] = []
+        self.clock_unavailable = False   # SetClock(enabled) fails, as with no font
         self.events = Broadcaster()
         self.server: Server | None = None
         self._next_id = 1
@@ -42,7 +49,8 @@ class FakeCompositor:
 
     def status(self) -> dict[str, Any]:
         return {"active": self.active, "transitioning": False, "output_power": self.power,
-                "output": {"name": "HEADLESS-1", "width": 1280, "height": 720, "refresh": 0}}
+                "output": {"name": "HEADLESS-1", "width": 1280, "height": 720, "refresh": 0},
+                "clock": dict(self.clock)}
 
     def _emit(self, kind: str, slot: dict[str, Any] | None = None) -> None:
         event: dict[str, Any] = {"kind": kind, "status": self.status()}
@@ -83,6 +91,7 @@ class FakeCompositor:
         iface.add_method("GetStatus", self._get_status)
         iface.add_method("Switch", self._switch)
         iface.add_method("SetOutputPower", self._power)
+        iface.add_method("SetClock", self._set_clock)
         iface.add_method("Subscribe", self._subscribe)
         self.server = Server(product="fake-compositor", version="0")
         self.server.add_interface(iface)
@@ -132,6 +141,23 @@ class FakeCompositor:
     async def _power(self, call: Call) -> None:
         self.power = call.param("on", bool)
         self._emit("output_power_changed")
+
+    async def _set_clock(self, call: Call) -> dict[str, Any]:
+        enabled = call.param("enabled", bool)
+        self.clock_calls.append(dict(call.parameters))
+        if enabled and self.clock_unavailable:
+            raise VarlinkError(f"{IFACE}.ClockUnavailable", {"reason": "no font"})
+        self.clock["enabled"] = enabled
+        for key in ("format", "position", "size"):
+            if call.parameters.get(key) is not None:
+                self.clock[key] = call.parameters[key]
+        self._emit("clock_changed")
+        return {"clock": dict(self.clock)}
+
+    def reset_clock(self) -> None:
+        """What a compositor restart does to the clock."""
+        self.clock = dict(DEFAULT_CLOCK)
+        self._emit("clock_changed")
 
     async def _subscribe(self, call: Call) -> None:
         call.require_more()

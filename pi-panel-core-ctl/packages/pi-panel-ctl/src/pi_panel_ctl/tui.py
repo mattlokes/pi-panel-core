@@ -18,6 +18,8 @@ from textual.widgets import DataTable
 from pi_panel_tui_kit import ConfirmScreen, Field, FormScreen, PiPanelApp, dot
 from pi_panel_varlink import Client, ProtocolError, VarlinkError, VarlinkTimeout, VarlinkUnavailable
 
+from .model import CLOCK_POSITIONS
+
 CTL = "io.pipanel.Ctl"
 _UNREACHABLE = (VarlinkUnavailable, VarlinkTimeout, ProtocolError, OSError)
 
@@ -36,6 +38,7 @@ class CtlApp(PiPanelApp):
         Binding("e", "toggle_enabled", "Enable/disable"),
         Binding("r", "restart", "Restart"),
         Binding("a", "action", "Action"),
+        Binding("c", "clock", "Clock"),
     ]
 
     def __init__(self, address: str) -> None:
@@ -103,6 +106,7 @@ class CtlApp(PiPanelApp):
             f"rotation {s.get('rotation')}{' [yellow]paused[/yellow]' if s.get('rotation_paused') else ''}"
             + (f"   holds {holds}" if holds else "")
             + (f"   schedule {sched}" if sched else "")
+            + ("   clock" if (s.get("clock") or {}).get("enabled") else "")
         )
 
     def _render_table(self) -> None:
@@ -252,6 +256,34 @@ class CtlApp(PiPanelApp):
             self.log_line(f"{a['name']}: {form['name']}")
         except (VarlinkError, *_UNREACHABLE) as exc:
             self.log_line(f"{a['name']}: {exc}", error=True)
+
+    @work(group="call")
+    async def action_clock(self) -> None:
+        clock = self.state.get("clock")
+        if clock is None:
+            self.notify("this pi-panel-ctl has no clock overlay", severity="warning")
+            return
+        form = await self.push_screen_wait(FormScreen("Clock overlay", [
+            Field("enabled", "Shown (yes/no)", "", "yes" if clock["enabled"] else "no"),
+            Field("format", "Format, strftime(3)", "e.g. %H:%M or %a %d %b %H:%M", clock["format"]),
+            Field("position", ", ".join(CLOCK_POSITIONS), "", clock["position"]),
+            Field("size", "Text height in px (0 = automatic)", "", str(clock["size"])),
+        ], submit_label="Apply"))
+        if not form:
+            return
+        enabled = form["enabled"].strip().lower()
+        if enabled not in ("yes", "no", "on", "off", "true", "false"):
+            self.log_line("shown must be yes or no", error=True)
+            return
+        try:
+            size = int(form["size"])
+        except ValueError:
+            self.log_line("size must be a whole number", error=True)
+            return
+        params = {"enabled": enabled in ("yes", "on", "true"), "format": form["format"],
+                  "position": form["position"].strip(), "size": size}
+        if await self._call("SetClock", params) is not None:
+            self.log_line(f"clock {'on' if params['enabled'] else 'off'}")
 
     @on(DataTable.RowSelected)
     def _row_selected(self) -> None:

@@ -24,4 +24,5 @@ the root [CLAUDE.md](../CLAUDE.md).
 - **Slots are re-registered on every compositor snapshot**, because a restarted compositor knows nothing.
 - **Unit control is D-Bus with `Manager.Subscribe()`**, low level (`dbus_fast.Message`), with no introspection. `FakeUnits` mirrors its interface for tests. `--user-units` drives the user manager instead, for development.
 - **Varlink `.varlink` files are served verbatim** and must parse with `varlinkctl validate-idl`; a test checks this. `org.varlink.service.ExpectedMore` is the standard error for a streaming method called without `more`.
+- **The clock overlay is reconciled like everything else.** `_sync_clock()` runs in the pass and compares ctl.toml's `[clock]` with the compositor's reported `status.clock`. `v_SetClock` only saves and kicks. A refused setting is remembered, so it is not resent on every pass.
 - **Subscribers never block ctl.** `Broadcaster` drops a subscriber that falls behind; clients resubscribe and get a fresh snapshot.

@@ -57,6 +57,12 @@ class CompositorLink:
     def output_power(self) -> bool:
         return bool(self.status.get("output_power", True))
 
+    @property
+    def clock(self) -> dict[str, Any] | None:
+        """The clock overlay as the compositor reports it; None from a
+        compositor too old to have one."""
+        return self.status.get("clock") if self.online else None
+
     def mapped(self) -> set[str]:
         """Registered slots that currently have a mapped window."""
         return {n for n, s in self.slots.items() if s.get("registered") and s.get("mapped")}
@@ -151,3 +157,15 @@ class CompositorLink:
         except (VarlinkError, *_LINK_ERRORS) as exc:
             log.warning("output power %s failed: %s", "on" if on else "off", exc)
             return False
+
+    async def set_clock(self, clock: dict[str, Any]) -> str | None:
+        """Push the clock settings. Returns None, or the error that refused them."""
+        try:
+            await self.client.call(f"{IFACE}.SetClock", clock)
+            return None
+        except VarlinkError as exc:
+            log.error("compositor refused the clock settings: %s %s", exc.error, exc.parameters)
+            return exc.error
+        except _LINK_ERRORS as exc:
+            log.debug("set clock failed: %s", exc)
+            return None   # the link is going down; the next snapshot retries

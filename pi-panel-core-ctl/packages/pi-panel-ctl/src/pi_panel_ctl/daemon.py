@@ -3,7 +3,7 @@
 One asyncio loop ties it together:
 
     compositor events ─┐
-    unit state changes ├─▶ kick ─▶ decide() ─▶ Switch / SetOutputPower / SetVisible
+    unit state changes ├─▶ kick ─▶ decide() ─▶ Switch / SetOutputPower / SetClock / SetVisible
     Varlink requests  ─┤                  └──▶ publish state/apps to subscribers
     engine timer      ─┘
 
@@ -40,7 +40,7 @@ from . import paths
 from .compositor import CompositorLink
 from .config import CtlConfig
 from .engine import Clock, Engine, SystemClock
-from .model import Rotation, RotationEntry, Schedule, ValidationError
+from .model import ClockSettings, Rotation, RotationEntry, Schedule, ValidationError
 from .packages import Package, load_registry
 from .units import SystemdUnits, UnitError, Units
 
@@ -86,6 +86,7 @@ class Ctl:
         self._last_apps: list[dict[str, Any]] | None = None
         self._visible: dict[str, bool] = {}          # last SetVisible sent per app
         self._interfaces: dict[str, list[str]] = {}  # app -> interfaces from GetInfo
+        self._clock_refused: dict[str, Any] | None = None  # not resent until it changes
         self._tasks: set[asyncio.Task[Any]] = set()
         self.server: Server | None = None
 
@@ -172,6 +173,7 @@ class Ctl:
             ],
             "active_schedules": list(decision.active_schedules),
             "compositor_online": self.compositor.online,
+            "clock": self.config.clock.to_dict(),
         }
 
     def apps_list(self) -> list[dict[str, Any]]:
@@ -225,9 +227,22 @@ class Ctl:
             if (decision.power and decision.showing and decision.showing in available
                     and decision.showing != comp.active and not comp.transitioning):
                 await comp.switch(decision.showing, self.config.transition)
+            await self._sync_clock()
+        else:
+            self._clock_refused = None   # a restarted compositor gets another try
 
         self._update_visibility()
         self._publish(decision)
+
+    async def _sync_clock(self) -> None:
+        """Make the compositor's clock overlay match ctl.toml. Its own event
+        (clock_changed) kicks the next pass, which then finds nothing to do."""
+        want = self.config.clock.to_dict()
+        have = self.compositor.clock
+        if have is None or have == want or want == self._clock_refused:
+            return
+        if await self.compositor.set_clock(want) is not None:
+            self._clock_refused = want
 
     def _update_visibility(self) -> None:
         comp = self.compositor
@@ -300,8 +315,8 @@ class Ctl:
         for name in ("GetState", "ListApps", "Show", "Release", "Next", "Previous",
                      "PauseRotation", "ResumeRotation", "GetRotations", "SetRotation",
                      "RemoveRotation", "SelectRotation", "GetSchedules", "SetSchedule",
-                     "RemoveSchedule", "EnablePackage", "RestartPackage", "Rescan",
-                     "Subscribe"):
+                     "RemoveSchedule", "SetClock", "EnablePackage", "RestartPackage",
+                     "Rescan", "Subscribe"):
             iface.add_method(name, getattr(self, f"v_{name}"))
         return iface
 
@@ -419,6 +434,18 @@ class Ctl:
             raise _err("NoSuchSchedule", schedule=name)
         self.engine.schedules = rules
         self.config_changed()
+
+    async def v_SetClock(self, call: Call) -> dict[str, Any]:
+        changes = {k: call.parameters.get(k) for k in ("enabled", "format", "position", "size")}
+        try:
+            clock = self.config.clock.merged(changes)
+        except ValidationError as exc:
+            raise _err("InvalidClock", reason=str(exc))
+        if clock != self.config.clock:
+            self.config.clock = clock
+            log.info("clock overlay: %s", clock.to_dict())
+            self.config_changed()
+        return {"clock": clock.to_dict()}
 
     async def v_EnablePackage(self, call: Call) -> None:
         name = call.param("name", str)

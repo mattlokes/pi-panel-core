@@ -15,6 +15,7 @@ from typing import Any
 from pi_panel_varlink import Client, ProtocolError, VarlinkError, VarlinkTimeout, VarlinkUnavailable
 
 from . import paths
+from .model import CLOCK_POSITIONS
 
 CTL = "io.pipanel.Ctl"
 
@@ -30,12 +31,21 @@ def _fmt_state(s: dict[str, Any]) -> str:
         f"rotation:   {s['rotation']}{'  (paused)' if s['rotation_paused'] else ''}",
         f"compositor: {'online' if s['compositor_online'] else 'OFFLINE'}",
     ]
+    if s.get("clock"):
+        lines.append(f"clock:      {_fmt_clock(s['clock'])}")
     if s["active_schedules"]:
         lines.append(f"schedules:  {', '.join(s['active_schedules'])}")
     for h in s["holds"]:
         left = "until released" if h["expires_in"] is None else f"{h['expires_in']:.0f}s left"
         lines.append(f"hold:       {h['app']} p{h['priority']} {left}  [{h['token']}]")
     return "\n".join(lines)
+
+
+def _fmt_clock(c: dict[str, Any]) -> str:
+    if not c["enabled"]:
+        return "off"
+    size = f"{c['size']}px" if c["size"] else "auto size"
+    return f"on  {c['format']!r} {c['position']} {size}"
 
 
 def _fmt_apps(apps: list[dict[str, Any]]) -> str:
@@ -104,6 +114,12 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("--priority", type=int, default=0)
     x = ss.add_parser("remove")
     x.add_argument("name")
+
+    x = sub.add_parser("clock", help="show or change the clock overlay, e.g. `clock on --format %%H:%%M`")
+    x.add_argument("switch", nargs="?", choices=["on", "off"])
+    x.add_argument("--format", help="strftime(3) format, e.g. '%%a %%H:%%M'")
+    x.add_argument("--position", choices=list(CLOCK_POSITIONS))
+    x.add_argument("--size", type=int, help="text height in px; 0 = automatic")
 
     for name in ("enable", "disable", "restart"):
         x = sub.add_parser(name, help=f"{name} a package")
@@ -184,6 +200,15 @@ async def run(args: argparse.Namespace) -> int:
             await call("SetSchedule", {"schedule": rule})
         elif args.scmd == "remove":
             await call("RemoveSchedule", {"name": args.name})
+    elif cmd == "clock":
+        params = {"enabled": None if args.switch is None else args.switch == "on",
+                  "format": args.format, "position": args.position, "size": args.size}
+        params = {k: v for k, v in params.items() if v is not None}
+        if params:
+            clock = (await call("SetClock", params))["clock"]
+        else:
+            clock = (await call("GetState"))["state"]["clock"]
+        print(json.dumps(clock, indent=2) if args.json else _fmt_clock(clock))
     elif cmd in ("enable", "disable"):
         await call("EnablePackage", {"name": args.name, "enabled": cmd == "enable"})
     elif cmd == "restart":

@@ -48,6 +48,19 @@ async def test_schedule_set_and_list(workdir, capsys):  # noqa: F811
         assert "night" in capsys.readouterr().out
 
 
+async def test_clock(workdir, capsys):  # noqa: F811
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        assert await cli(p, "clock") == 0
+        assert capsys.readouterr().out.strip() == "off"
+        assert await cli(p, "clock", "on", "--format", "%H:%M:%S", "--position", "center") == 0
+        assert capsys.readouterr().out.strip() == "on  '%H:%M:%S' center auto size"
+        await until(lambda: p.compositor.clock["position"] == "center")
+        assert await cli(p, "status") == 0
+        assert "clock:      on" in capsys.readouterr().out
+        assert await cli(p, "clock", "off") == 0
+        await until(lambda: p.compositor.clock["enabled"] is False)
+
+
 def test_bad_rotation_entry_is_rejected_by_argparse():
     with pytest.raises(SystemExit):
         build_parser().parse_args(["rotation", "set", "x", "no-seconds"])

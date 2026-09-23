@@ -13,6 +13,12 @@ up on restart.
     name = "default"
     entries = [{app = "immich", seconds = 300}, {app = "clock", seconds = 60}]
 
+    [clock]                       # the compositor's clock overlay
+    enabled = true
+    format = "%H:%M"              # strftime(3)
+    position = "bottom_right"     # top_left, top_right, bottom_left, bottom_right, center
+    size = 0                      # text height in px; 0 = automatic
+
     [[schedule]]
     name = "night"
     days = "daily"
@@ -37,7 +43,7 @@ from typing import Any
 
 import tomli_w
 
-from .model import Rotation, Schedule, ValidationError
+from .model import ClockSettings, Rotation, Schedule, ValidationError
 
 TRANSITIONS = ("fade", "cut")
 
@@ -50,6 +56,7 @@ class CtlConfig:
     transition: str = "fade"
     rotations: dict[str, Rotation] = field(default_factory=dict)
     schedules: list[Schedule] = field(default_factory=list)
+    clock: ClockSettings = field(default_factory=ClockSettings)
 
     @classmethod
     def load(cls, path: Path) -> "CtlConfig":
@@ -59,7 +66,7 @@ class CtlConfig:
             data = tomllib.load(fh)
 
         known = {"enabled", "selected_rotation", "default_seconds", "transition",
-                 "rotation", "schedule"}
+                 "rotation", "schedule", "clock"}
         unknown = set(data) - known
         if unknown:
             # A typo'd key would otherwise be silently dropped at the next save.
@@ -73,6 +80,13 @@ class CtlConfig:
         )
         if cfg.transition not in TRANSITIONS:
             raise ValidationError(f"{path}: transition must be fade or cut")
+        raw_clock = data.get("clock", {})
+        if not isinstance(raw_clock, dict):
+            raise ValidationError(f"{path}: clock must be a table")
+        try:
+            cfg.clock = ClockSettings.from_dict(raw_clock)
+        except ValidationError as exc:
+            raise ValidationError(f"{path}: clock: {exc}") from None
         for raw in data.get("rotation", []):
             rot = Rotation.from_dict(raw)
             cfg.rotations[rot.name] = rot
@@ -91,6 +105,7 @@ class CtlConfig:
             "selected_rotation": self.selected_rotation,
             "default_seconds": self.default_seconds,
             "transition": self.transition,
+            "clock": self.clock.to_dict(),
         }
         if self.rotations:
             data["rotation"] = [r.to_dict() for r in self.rotations.values()]

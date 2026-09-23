@@ -312,3 +312,58 @@ async def test_rotate_false_apps_stay_out_of_the_implicit_rotation(workdir):
         await p.call("Show", {"app": "cam", "seconds": 0.3})   # ...and shown on request
         await until(lambda: p.compositor.active == "cam")
         await until(lambda: p.compositor.active == "photos")
+
+
+CLOCK_ON = {"enabled": True, "format": "%a %H:%M", "position": "top_right", "size": 0}
+
+
+async def test_clock_is_applied_persisted_and_reapplied(workdir):
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        # Default: off, which is what the compositor starts with: nothing to send.
+        await asyncio.sleep(0.1)
+        assert p.compositor.clock_calls == []
+        reply = await p.call("SetClock", {"enabled": True, "format": "%a %H:%M",
+                                          "position": "top_right"})
+        assert reply["clock"] == CLOCK_ON
+        await until(lambda: p.compositor.clock == CLOCK_ON)
+        assert (await p.call("GetState"))["state"]["clock"] == CLOCK_ON
+        # Omitted fields are kept.
+        await p.call("SetClock", {"size": 48})
+        await until(lambda: p.compositor.clock["size"] == 48)
+        assert p.compositor.clock["format"] == "%a %H:%M"
+        # A restarted compositor forgets the clock; ctl puts it back.
+        p.compositor.reset_clock()
+        await until(lambda: p.compositor.clock == {**CLOCK_ON, "size": 48})
+    saved = CtlConfig.load(workdir / "ctl.toml").clock
+    assert saved.to_dict() == {**CLOCK_ON, "size": 48}
+
+
+async def test_clock_from_config_is_applied_at_startup(workdir):
+    from pi_panel_ctl.model import ClockSettings
+    async with Panel(workdir, APPS, enabled=["photos"],
+                     clock=ClockSettings.from_dict(CLOCK_ON)) as p:
+        await until(lambda: p.compositor.clock == CLOCK_ON)
+
+
+async def test_clock_validation(workdir):
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        for bad in ({"format": ""}, {"format": "%c" * 40}, {"size": 5}, {"size": 2000},
+                    {"size": True}, {"position": "middle"}, {"enabled": "yes"}):
+            with pytest.raises(VarlinkError) as exc:
+                await p.call("SetClock", bad)
+            assert exc.value.error == f"{CTL}.InvalidClock", bad
+        assert (await p.call("GetState"))["state"]["clock"]["enabled"] is False
+
+
+async def test_clock_refused_by_compositor_is_not_retried_in_a_loop(workdir):
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        p.compositor.clock_unavailable = True
+        await p.call("SetClock", {"enabled": True})
+        await until(lambda: len(p.compositor.clock_calls) == 1)
+        await p.call("Next")        # more reconcile passes
+        await asyncio.sleep(0.2)
+        assert len(p.compositor.clock_calls) == 1
+        # A different setting is a new attempt.
+        p.compositor.clock_unavailable = False
+        await p.call("SetClock", {"size": 40})
+        await until(lambda: p.compositor.clock["enabled"] is True)

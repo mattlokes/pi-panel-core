@@ -32,6 +32,16 @@ Everything is pushed, nothing is polled:
 Apps that serve `io.pipanel.App` are told when they are shown or hidden, so
 they can stop working while off screen.
 
+## The clock overlay
+
+The compositor can draw the time above whatever app is showing. ctl owns the
+settings: they are kept in the `[clock]` table of ctl.toml, reported in
+`State.clock`, and changed with `SetClock`, where omitted fields are kept. The
+reconcile pass pushes them to the compositor, including after it restarts. If
+the compositor refuses them (for example, its font is missing), ctl logs the
+error and does not retry until the settings change or the compositor comes
+back.
+
 ## Using it
 
 ```bash
@@ -42,6 +52,8 @@ pi-panel-ctl next | prev | pause | resume
 pi-panel-ctl rotation set default immich:300 clock:60
 pi-panel-ctl schedule set night --start 23:00 --end 06:30 --action power_off --priority 10
 pi-panel-ctl enable immich | disable immich | restart immich
+pi-panel-ctl clock on --format '%a %H:%M' --position top_right   # the clock overlay
+pi-panel-ctl clock off | pi-panel-ctl clock                         # off / show settings
 pi-panel-ctl action immich next         # an app's own action
 pi-panel-ctl watch                      # the event stream
 pi-panel-ctl tui
@@ -55,7 +67,7 @@ varlinkctl call --more /run/pi-panel/ctl/io.pipanel.Ctl io.pipanel.Ctl.Subscribe
 ```
 
 Configuration lives in `~/.config/pi-panel/ctl.toml`, which covers enabled
-packages, rotations, schedules and the transition style. ctl writes changes
+packages, rotations, schedules, the transition style and the clock overlay. ctl writes changes
 made through the API back to this file.
 
 ## Development

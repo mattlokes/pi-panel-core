@@ -1,4 +1,4 @@
-"""Rotation and schedule data, and the rules for when a schedule applies."""
+"""Rotation, schedule and clock overlay data, and the rules for when a schedule applies."""
 
 from __future__ import annotations
 
@@ -9,6 +9,11 @@ from typing import Any
 
 DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 SCHEDULE_ACTIONS = ("power_off", "show", "rotation")
+CLOCK_POSITIONS = ("top_left", "top_right", "bottom_left", "bottom_right", "center")
+# The compositor's limits (io.pipanel.Compositor.SetClock), checked here so a
+# bad value is refused to the caller instead of by the compositor later.
+CLOCK_FORMAT_MAX_BYTES = 63
+CLOCK_SIZE_MIN, CLOCK_SIZE_MAX = 8, 1000
 _HHMM = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
@@ -188,3 +193,46 @@ class Schedule:
     def to_config(self) -> dict[str, Any]:
         """For ctl.toml: TOML has no null, so absent keys are simply left out."""
         return {k: v for k, v in self.to_dict().items() if v is not None}
+
+
+@dataclass(frozen=True, slots=True)
+class ClockSettings:
+    """The compositor's clock overlay, as ctl wants it.
+
+    ctl owns these settings (they live in ctl.toml) and the reconcile pass
+    pushes them to the compositor whenever what it reports differs."""
+
+    enabled: bool = False
+    format: str = "%H:%M"          # strftime(3), the panel's local time
+    position: str = "bottom_right"
+    size: int = 0                  # text height in px; 0 = automatic
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ClockSettings":
+        return cls().merged(data)
+
+    def merged(self, changes: dict[str, Any]) -> "ClockSettings":
+        """These settings with |changes| applied; None/absent keys are kept."""
+        unknown = set(changes) - {"enabled", "format", "position", "size"}
+        if unknown:
+            raise ValidationError(f"unknown clock key(s): {', '.join(sorted(unknown))}")
+        values = {k: v for k, v in changes.items() if v is not None}
+        enabled = values.get("enabled", self.enabled)
+        fmt = values.get("format", self.format)
+        position = values.get("position", self.position)
+        size = values.get("size", self.size)
+        if not isinstance(enabled, bool):
+            raise ValidationError("enabled must be true or false")
+        if (not isinstance(fmt, str) or not fmt
+                or len(fmt.encode()) > CLOCK_FORMAT_MAX_BYTES):
+            raise ValidationError(f"format must be 1-{CLOCK_FORMAT_MAX_BYTES} bytes")
+        if position not in CLOCK_POSITIONS:
+            raise ValidationError(f"position must be one of {', '.join(CLOCK_POSITIONS)}")
+        if (isinstance(size, bool) or not isinstance(size, int)
+                or not (size == 0 or CLOCK_SIZE_MIN <= size <= CLOCK_SIZE_MAX)):
+            raise ValidationError(f"size must be 0 (automatic) or {CLOCK_SIZE_MIN}-{CLOCK_SIZE_MAX}")
+        return ClockSettings(enabled, fmt, position, size)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"enabled": self.enabled, "format": self.format,
+                "position": self.position, "size": self.size}
