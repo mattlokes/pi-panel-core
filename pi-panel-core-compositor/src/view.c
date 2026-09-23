@@ -201,7 +201,14 @@ static void handle_view_request_fullscreen(struct wl_listener *listener,
                                             void *data) {
     (void)data;
     struct view *view = wl_container_of(listener, view, request_fullscreen);
-    /* Always grant fullscreen in a kiosk — client asked, we comply */
+    /* Clients may ask before their initial commit (GStreamer's waylandsink
+     * does).  Configuring then violates xdg-shell and wlroots asserts
+     * (`surface->initialized`), taking the whole compositor down.  Nothing is
+     * lost by ignoring it: handle_view_commit() makes every window fullscreen
+     * on its initial commit anyway. */
+    if (!view->xdg_toplevel->base->initialized) {
+        return;
+    }
     wlr_xdg_toplevel_set_fullscreen(view->xdg_toplevel, true);
 }
 

@@ -13,6 +13,7 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_viewporter.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 
@@ -256,6 +257,11 @@ bool server_init(struct server *server, const struct server_config *cfg) {
         wlr_compositor_create(server->display, 5, server->renderer);
     server->subcompositor   = wlr_subcompositor_create(server->display);
     server->data_device_mgr = wlr_data_device_manager_create(server->display);
+    /* wp_viewporter lets a client present a buffer at a different size than
+     * it was rendered.  Video clients depend on it: GStreamer's waylandsink
+     * scales frames to the window this way, and without it a 640x360 stream
+     * is drawn unscaled in a corner of the screen. */
+    wlr_viewporter_create(server->display);
 
     /* 6. Output layout + scene graph */
     server->output_layout = wlr_output_layout_create(server->display);
