@@ -1,0 +1,35 @@
+[Unit]
+Description=pi-panel app %i
+Documentation=file:/home/pi/pi-panel-core/pi-panel-core-pluginman/docs/app-contract.md
+PartOf=pi-panel.target
+# An app is a Wayland client of the compositor: it goes down with it and is
+# started again (by pi-panel-ctl) when it comes back.
+BindsTo=pi-panel-compositor.service
+After=pi-panel-compositor.service pi-panel-ctl.service
+# Started by pi-panel-ctl, never by a WantedBy= of its own (no [Install]).
+
+[Service]
+Type=exec
+User=pi
+Group=pi
+Slice=pi-panel.slice
+SyslogIdentifier=pi-panel-app-%i
+
+# The compositor's Wayland socket. pi-panel-run adds XDG_RUNTIME_DIR.
+Environment=WAYLAND_DISPLAY=pi-panel-0
+# Toolkits that would otherwise try X11 or grab DRM for themselves.
+Environment=SDL_VIDEODRIVER=wayland QT_QPA_PLATFORM=wayland GDK_BACKEND=wayland
+Environment=PYTHONUNBUFFERED=1
+
+# /run/pi-panel/apps/%i/socket is where an app serves io.pipanel.App.
+RuntimeDirectory=pi-panel/apps/%i
+RuntimeDirectoryMode=0750
+
+# Reads the package's pi-panel.toml and execs its command: no per-package
+# unit files, so installing an app needs neither root nor a daemon-reload.
+ExecStart=/home/pi/pi-panel-core/pi-panel-core-pluginman/.venv/bin/pi-panel-run app %i
+
+Restart=always
+RestartSec=2
+# The app contract: exit within 5s of SIGTERM.
+TimeoutStopSec=5

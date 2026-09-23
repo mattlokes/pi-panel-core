@@ -1,0 +1,40 @@
+[project]
+name = "pi-panel-pluginman"
+version = "0.1.0"
+description = "Install pi-panel apps and plugins from git repos or tarballs"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "pi-panel-varlink",
+    "pi-panel-tui-kit",
+]
+
+[project.scripts]
+pi-panel-pkg = "pi_panel_pluginman.cli:main"
+pi-panel-run = "pi_panel_pluginman.run:main"
+
+# The shared libraries live in pi-panel-core-ctl's workspace. Every pi-panel
+# repo sits in the same layout (~/pi-panel-core, ~/pi-panel-apps,
+# ~/pi-panel-plugin), so a relative path works on the Pi and in development.
+[tool.uv.sources]
+pi-panel-varlink = { path = "../pi-panel-core-ctl/packages/pi-panel-varlink" }
+pi-panel-tui-kit = { path = "../pi-panel-core-ctl/packages/pi-panel-tui-kit" }
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pi_panel_pluginman"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
