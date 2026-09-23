@@ -43,12 +43,18 @@ def build(kind: str, name: str) -> tuple[Path, list[str], dict[str, str]]:
     config_dir = paths.package_config_dir(kind, name)
     config_dir.mkdir(parents=True, exist_ok=True)
 
+    variables = {
+        "config_dir": str(config_dir),
+        "package_dir": str(package_dir),
+        "name": name,
+        "runtime_dir": str(paths.runtime_dir()),
+    }
     env = dict(os.environ)
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     local_bin = str(Path.home() / ".local" / "bin")
     if local_bin not in env.get("PATH", "").split(":"):
         env["PATH"] = f"{local_bin}:{env.get('PATH', '/usr/bin:/bin')}"
-    env.update(manifest.env)
+    env.update(manifest.environment(variables))
     # Set last: a manifest must not be able to redirect these.
     env.update({
         "PI_PANEL_NAME": name,
@@ -60,12 +66,7 @@ def build(kind: str, name: str) -> tuple[Path, list[str], dict[str, str]]:
     if kind == "app" and manifest.varlink:
         env["PI_PANEL_APP_SOCKET"] = str(paths.app_socket(name))
 
-    argv = manifest.argv({
-        "config_dir": str(config_dir),
-        "package_dir": str(package_dir),
-        "name": name,
-        "runtime_dir": str(paths.runtime_dir()),
-    })
+    argv = manifest.argv(variables)
     return package_dir, argv, env
 
 

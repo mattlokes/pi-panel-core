@@ -7,8 +7,8 @@ The registry is `<data_home>/packages.json`, written by pluginman:
       "packages": {
         "immich": {
           "name": "immich", "kind": "app", "version": "0.3.0",
-          "description": "...", "path": "/home/pi/.local/share/pi-panel/packages/immich",
-          "varlink": true,
+          "description": "...", "path": "/home/pi/pi-panel-apps/immich",
+          "varlink": true, "rotate": true,
           "source": {...}, "installed_at": "..."      # pluginman's own bookkeeping
         }
       }
@@ -38,6 +38,7 @@ class Package:
     description: str | None = None
     path: str | None = None
     varlink: bool = False
+    rotate: bool = True     # in the implicit default rotation (a camera app says no)
 
 
 def load_registry(path: Path) -> dict[str, Package]:
@@ -61,5 +62,6 @@ def load_registry(path: Path) -> dict[str, Package]:
             description=entry.get("description"),
             path=entry.get("path"),
             varlink=bool(entry.get("varlink", False)),
+            rotate=bool(entry.get("rotate", True)),
         )
     return out

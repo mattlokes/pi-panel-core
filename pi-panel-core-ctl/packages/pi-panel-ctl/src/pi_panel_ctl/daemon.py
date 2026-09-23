@@ -116,11 +116,13 @@ class Ctl:
 
     def _sync_rotations(self) -> None:
         """Configured rotations, plus the implicit 'default' when none is set:
-        every enabled app in turn, `default_seconds` each."""
+        every enabled app in turn, `default_seconds` each, except apps whose
+        manifest says `rotate = false` (e.g. a camera, shown only on events)."""
         rotations = dict(self.config.rotations)
         if "default" not in rotations:
             rotations["default"] = Rotation("default", tuple(
                 RotationEntry(n, self.config.default_seconds) for n in self._enabled_apps()
+                if self.packages[n].rotate
             ))
         self.engine.rotations = rotations
 

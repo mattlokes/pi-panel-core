@@ -297,3 +297,18 @@ def test_interface_files_parse_with_varlinkctl(tmp_path):
         f.write_text(text)
         result = subprocess.run([varlinkctl, "validate-idl", str(f)], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
+
+
+async def test_rotate_false_apps_stay_out_of_the_implicit_rotation(workdir):
+    packages = {**APPS, "cam": {"kind": "app", "rotate": False}}
+    async with Panel(workdir, packages, enabled=["photos", "cam"]) as p:
+        default = next(r for r in (await p.call("GetRotations"))["rotations"]
+                       if r["name"] == "default")
+        assert [e["app"] for e in default["entries"]] == ["photos"]
+        await until(lambda: "cam" in p.compositor.slots)   # still registered and running
+        p.compositor.map("photos")
+        p.compositor.map("cam")
+        await until(lambda: p.compositor.active == "photos")
+        await p.call("Show", {"app": "cam", "seconds": 0.3})   # ...and shown on request
+        await until(lambda: p.compositor.active == "cam")
+        await until(lambda: p.compositor.active == "photos")

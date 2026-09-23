@@ -19,8 +19,12 @@ command = "uv sync --frozen --compile-bytecode"
 [config]                    # optional
 templates = ["config.yaml.example"]
 
+[system]                    # optional
+packages = ["gstreamer1.0-nice"]
+
 [app]                       # apps only, optional
 varlink = true
+rotate = true               # default; false keeps it out of the implicit rotation
 ```
 
 ## `[package]`
@@ -43,7 +47,8 @@ substituted:
 | `${name}` | the package name |
 | `${runtime_dir}` | `/run/pi-panel` |
 
-`env` adds environment variables. It cannot override the `PI_PANEL_*`
+`env` adds environment variables, and its values may use the same variables,
+e.g. `PYTHONPATH = "${package_dir}/src"`. It cannot override the `PI_PANEL_*`
 variables that `pi-panel-run` sets.
 
 ## `[build]`
@@ -65,7 +70,21 @@ Each file listed in `templates` is copied into `${config_dir}` on install,
 without its `.example` suffix, but only if the target does not already exist.
 Your edits therefore survive updates.
 
+## `[system]`
+
+`packages` lists the Debian packages the package needs at runtime, such as
+GStreamer plugins or `python3-gi`. pluginman never uses root, so it only
+checks them with `dpkg-query`. If any are missing, the install stops before
+building and prints the exact `sudo apt install …` to run. `pi-panel-pkg info`
+shows them and marks any that are missing.
+
 ## `[app]`
 
 `varlink = true` declares that the app serves `io.pipanel.App` on
 `$PI_PANEL_APP_SOCKET`. See [app-contract.md](app-contract.md).
+
+`rotate = false` keeps the app out of pi-panel-ctl's *implicit* default
+rotation, the one used when you haven't configured any. Use it for apps that
+should appear only on request, like a camera feed shown on a doorbell press.
+The app still runs and can be shown with `pi-panel-ctl show`, from Home
+Assistant or by a schedule, and you can still put it in an explicit rotation.

@@ -16,11 +16,16 @@
     [config]                   # optional
     templates = ["config.yaml.example"]   # copied into ${config_dir}, minus ".example", if absent
 
+    [system]                   # optional: Debian packages it needs (checked, not installed)
+    packages = ["gstreamer1.0-nice"]
+
     [app]                      # apps only, optional
     varlink = true             # serves io.pipanel.App on $PI_PANEL_APP_SOCKET
+    rotate = false             # leave out of ctl's implicit default rotation
 
 `exec` is split like a shell command line (quotes work) but is not run through
-a shell, and may use ${config_dir}, ${package_dir}, ${name} and ${runtime_dir}.
+a shell. It and the values of `[run].env` may use ${config_dir},
+${package_dir}, ${name} and ${runtime_dir}.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ from typing import Any
 FILENAME = "pi-panel.toml"
 KINDS = ("app", "plugin")
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
+_DEB = re.compile(r"^[a-z0-9][a-z0-9.+-]+(:[a-z0-9]+)?$")
 _VAR = re.compile(r"\$\{(\w+)\}")
 VARIABLES = ("config_dir", "package_dir", "name", "runtime_dir")
 
@@ -54,6 +60,8 @@ class Manifest:
     build: str | None = None
     templates: tuple[str, ...] = ()
     varlink: bool = False
+    rotate: bool = True
+    system_packages: tuple[str, ...] = ()
 
     @classmethod
     def load(cls, directory: Path) -> "Manifest":
@@ -69,7 +77,7 @@ class Manifest:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Manifest":
-        unknown = set(data) - {"package", "run", "build", "config", "app"}
+        unknown = set(data) - {"package", "run", "build", "config", "app", "system"}
         if unknown:
             raise ManifestError(f"unknown section(s): {', '.join(sorted(unknown))}")
         pkg = _table(data, "package")
@@ -77,6 +85,7 @@ class Manifest:
         build = _table(data, "build", required=False)
         config = _table(data, "config", required=False)
         app = _table(data, "app", required=False)
+        system = _table(data, "system", required=False)
 
         name = _str(pkg, "package.name")
         if not _NAME.match(name):
@@ -104,6 +113,15 @@ class Manifest:
         if not isinstance(env, dict) or not all(
                 isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
             raise ManifestError("run.env must map names to strings")
+        for key, value in env.items():
+            for var in _VAR.findall(value):
+                if var not in VARIABLES:
+                    raise ManifestError(f"run.env.{key}: unknown variable ${{{var}}}")
+
+        packages = system.get("packages", []) if system else []
+        if not isinstance(packages, list) or not all(
+                isinstance(x, str) and _DEB.match(x) for x in packages):
+            raise ManifestError("system.packages must be a list of Debian package names")
 
         templates = config.get("templates", []) if config else []
         if not isinstance(templates, list) or not all(isinstance(t, str) for t in templates):
@@ -122,11 +140,17 @@ class Manifest:
             build=_opt_str(build, "command") if build else None,
             templates=tuple(templates),
             varlink=bool(app.get("varlink", False)) if app else False,
+            rotate=bool(app.get("rotate", True)) if app else True,
+            system_packages=tuple(packages),
         )
 
     def argv(self, variables: dict[str, str]) -> list[str]:
         """The command to exec, with ${...} substituted in each argument."""
         return [_VAR.sub(lambda m: variables[m.group(1)], arg) for arg in shlex.split(self.exec)]
+
+    def environment(self, variables: dict[str, str]) -> dict[str, str]:
+        """`[run].env`, with ${...} substituted in each value."""
+        return {k: _VAR.sub(lambda m: variables[m.group(1)], v) for k, v in self.env.items()}
 
 
 def _table(data: dict[str, Any], key: str, required: bool = True) -> dict[str, Any]:

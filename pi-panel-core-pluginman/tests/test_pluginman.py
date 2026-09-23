@@ -295,3 +295,69 @@ def test_scaffold_produces_valid_packages(tmp_path, kind):
     compile(script.read_text(), str(script), "exec")
     with pytest.raises(FileExistsError):
         scaffold.create(kind, "weather", tmp_path)
+
+
+# --- [system] packages, env substitution, rotate -----------------------------
+
+def _fake_dpkg(bin_dir: Path, installed: set[str]) -> None:
+    """A dpkg-query that knows only |installed|."""
+    bin_dir.mkdir(exist_ok=True)
+    script = bin_dir / "dpkg-query"
+    script.write_text("#!/bin/sh\n" + "".join(
+        f'[ "$3" = "{p}" ] && {{ printf "install ok installed"; exit 0; }}\n' for p in installed)
+        + "echo 'no packages found' >&2; exit 1\n")
+    script.chmod(0o755)
+
+
+def _package_with(where: Path, extra: str, build: str = "true") -> Path:
+    make_package(where, build=build)
+    (where / "pi-panel.toml").write_text((where / "pi-panel.toml").read_text() + extra)
+    return where
+
+
+async def test_missing_system_packages_stop_the_install(panel_home, tmp_path, monkeypatch):
+    _fake_dpkg(tmp_path / "bin", {"gstreamer1.0-libav"})
+    monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}:{os.environ['PATH']}")
+    src = _package_with(tmp_path / "a", '\n[system]\npackages = ["gstreamer1.0-libav", '
+                                        '"gstreamer1.0-nice"]\n', build="touch built")
+    with pytest.raises(PackageError, match="sudo apt install gstreamer1.0-nice$"):
+        await Manager(output=Lines()).install(str(src))
+    assert not paths.package_dir("app", "demo").exists()     # nothing built or moved
+
+
+async def test_present_system_packages_let_it_install(panel_home, tmp_path, monkeypatch):
+    _fake_dpkg(tmp_path / "bin", {"gstreamer1.0-nice"})
+    monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}:{os.environ['PATH']}")
+    src = _package_with(tmp_path / "a", '\n[system]\npackages = ["gstreamer1.0-nice"]\n')
+    entry = await Manager(output=Lines()).install(str(src))
+    assert entry.name == "demo"
+
+
+def test_system_packages_are_validated():
+    with pytest.raises(ManifestError, match="Debian package names"):
+        Manifest.from_dict({"package": {"name": "x", "kind": "app"}, "run": {"exec": "true"},
+                            "system": {"packages": ["rm -rf /"]}})
+
+
+def test_env_values_substitute_variables():
+    m = Manifest.from_dict({"package": {"name": "x", "kind": "app"},
+                            "run": {"exec": "true", "env": {"PYTHONPATH": "${package_dir}/src"}}})
+    assert m.environment({"package_dir": "/p", "config_dir": "", "name": "", "runtime_dir": ""}) \
+        == {"PYTHONPATH": "/p/src"}
+    with pytest.raises(ManifestError, match=r"run.env.X: unknown variable"):
+        Manifest.from_dict({"package": {"name": "x", "kind": "app"},
+                            "run": {"exec": "true", "env": {"X": "${nope}"}}})
+
+
+async def test_run_substitutes_env_and_records_rotate(panel_home, tmp_path):
+    src = tmp_path / "a"
+    src.mkdir()
+    (src / "pi-panel.toml").write_text(
+        '[package]\nname = "cam"\nkind = "app"\n'
+        '[run]\nexec = "true"\nenv = { PYTHONPATH = "${package_dir}/src" }\n'
+        '[app]\nrotate = false\n')
+    entry = await Manager(output=Lines()).install(str(src))
+    assert entry.rotate is False
+    assert json.loads(paths.registry().read_text())["packages"]["cam"]["rotate"] is False
+    _, _, env = run.build("app", "cam")
+    assert env["PYTHONPATH"] == f"{paths.package_dir('app', 'cam')}/src"

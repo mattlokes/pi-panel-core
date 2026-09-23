@@ -17,6 +17,7 @@ import os
 import re
 import shlex
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import urllib.request
@@ -67,6 +68,22 @@ def parse_source(text: str) -> SourceSpec:
         path = str(candidate.resolve())
         return SourceSpec("git" if ref else "local", path, ref)
     return SourceSpec("git", url, ref)
+
+
+def missing_system_packages(packages: tuple[str, ...] | list[str]) -> list[str] | None:
+    """The Debian packages in |packages| that are not installed. None when
+    this is not a dpkg system, in which case nothing can be checked."""
+    if not packages:
+        return []
+    if shutil.which("dpkg-query") is None:
+        return None
+    missing = []
+    for pkg in packages:
+        result = subprocess.run(["dpkg-query", "-W", "-f=${Status}", pkg],
+                                capture_output=True, text=True)
+        if result.returncode != 0 or "install ok installed" not in result.stdout:
+            missing.append(pkg)
+    return missing
 
 
 def _env() -> dict[str, str]:
@@ -208,6 +225,16 @@ class Manager:
             if confirm is not None and not await confirm(manifest):
                 raise PackageError("cancelled")
 
+            # pluginman never uses root, so it cannot install these itself;
+            # fail before building, with the exact command to run.
+            missing = await asyncio.to_thread(missing_system_packages, manifest.system_packages)
+            if missing is None:
+                self.output("warning: not a dpkg system; cannot check [system] packages")
+            elif missing:
+                raise PackageError(
+                    f"{manifest.name} needs system packages that are not installed.\n"
+                    f"Install them first:  sudo apt install {' '.join(missing)}")
+
             dest = paths.package_dir(manifest.kind, manifest.name)
             dest.parent.mkdir(parents=True, exist_ok=True)
             previous = stage / "previous"
@@ -230,7 +257,7 @@ class Manager:
             entry = Entry(
                 name=manifest.name, kind=manifest.kind, path=str(dest), source=source,
                 version=manifest.version, description=manifest.description,
-                varlink=manifest.varlink,
+                varlink=manifest.varlink, rotate=manifest.rotate,
             )
             self.registry.put(entry)
             self.output(f"installed {manifest.name} into {dest}")

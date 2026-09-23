@@ -1,11 +1,11 @@
 """packages.json: what is installed, where from, and where to.
 
 pluginman writes it; pi-panel-ctl reads it (name, kind, version, description,
-path, varlink). Anything else here is pluginman's own bookkeeping.
+path, varlink, rotate). Anything else here is pluginman's own bookkeeping.
 
     {"version": 1, "packages": {"immich": {
         "name": "immich", "kind": "app", "version": "0.3.0", "description": "...",
-        "path": "/home/pi/pi-panel-apps/immich", "varlink": true,
+        "path": "/home/pi/pi-panel-apps/immich", "varlink": true, "rotate": true,
         "source": {"type": "git", "url": "...", "ref": "main", "commit": "abc123"},
         "installed_at": "2026-09-23T12:00:00+00:00"}}}
 """
@@ -41,6 +41,7 @@ class Entry:
     version: str | None = None
     description: str | None = None
     varlink: bool = False
+    rotate: bool = True
     installed_at: str = field(default_factory=lambda: datetime.now(timezone.utc)
                               .isoformat(timespec="seconds"))
 
@@ -56,6 +57,7 @@ class Entry:
                           src.get("commit"), src.get("sha256")),
             version=data.get("version"), description=data.get("description"),
             varlink=bool(data.get("varlink", False)),
+            rotate=bool(data.get("rotate", True)),
             installed_at=data.get("installed_at", ""),
         )
 

@@ -97,6 +97,18 @@ async def run(args: argparse.Namespace) -> int:
         if entry.source.sha256:
             print(f"sha256:      {entry.source.sha256}")
         print(f"installed:   {entry.installed_at}")
+        try:
+            manifest = Manifest.load(Path(entry.path))
+        except Exception:  # noqa: BLE001 - info must work on a broken install
+            manifest = None
+        if manifest and manifest.system_packages:
+            from .manager import missing_system_packages
+            missing = missing_system_packages(manifest.system_packages) or []
+            listing = ", ".join(p + (" (MISSING)" if p in missing else "")
+                                for p in manifest.system_packages)
+            print(f"system:      {listing}")
+        if entry.kind == "app":
+            print(f"rotate:      {'yes' if entry.rotate else 'no (shown only on request)'}")
         print(f"unit:        pi-panel-{entry.kind}@{entry.name}.service")
     elif args.cmd == "new":
         target = scaffold.create(args.kind, args.name, args.dir)
