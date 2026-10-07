@@ -217,7 +217,11 @@ static void clock_update(struct clock_state *cs, bool force) {
 
     /* Pick up a changed /etc/localtime (timedatectl set-timezone). */
     tzset();
-    time_t t = time(NULL);
+    /* Not time(): it reads the coarse clock, which can still be a few ms
+     * short of the minute the timerfd just fired for. */
+    struct timespec now;
+    clock_gettime(CLOCK_REALTIME, &now);
+    time_t t = now.tv_sec;
     struct tm tm;
     localtime_r(&t, &tm);
     char text[sizeof(cs->shown)];
