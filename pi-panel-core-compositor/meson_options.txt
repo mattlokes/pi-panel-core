@@ -4,5 +4,5 @@ option('default_ipc_socket',
   description: 'Default Varlink socket path (the systemd unit passes it explicitly too)')
 option('clock_font',
   type: 'string',
-  value: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-  description: 'TrueType font for the clock overlay')
+  value: '',
+  description: 'TrueType font for the clock overlay (empty: fonts/InterDisplayClock-SemiBold.ttf)')

@@ -18,12 +18,19 @@ xkbcommon  = dependency('xkbcommon', required: true)
 pixman     = dependency('pixman-1', required: true)
 libm       = cc.find_library('m', required: true)
 
+# The clock's font is read at run time from the source tree: the unit runs
+# the compositor out of build/, next to it.
+clock_font = get_option('clock_font')
+if clock_font == ''
+  clock_font = meson.project_source_root() / 'fonts' / 'InterDisplayClock-SemiBold.ttf'
+endif
+
 add_project_arguments(
   '-DWLR_USE_UNSTABLE',
   '-D_GNU_SOURCE',   # accept4() and friends
   '-DPI_PANEL_VERSION="@0@"'.format(meson.project_version()),
   '-DIPC_DEFAULT_PATH="@0@"'.format(get_option('default_ipc_socket')),
-  '-DCLOCK_DEFAULT_FONT="@0@"'.format(get_option('clock_font')),
+  '-DCLOCK_FONT="@0@"'.format(clock_font),
   language: 'c',
 )
 

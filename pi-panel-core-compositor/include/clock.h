@@ -13,9 +13,13 @@
 #define CLOCK_SIZE_MIN    8
 #define CLOCK_SIZE_MAX    1000
 
-#ifndef CLOCK_DEFAULT_FONT
-#define CLOCK_DEFAULT_FONT "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+/* CLOCK_FONT comes from the build (the bundled Inter Display Clock unless
+ * -Dclock_font says otherwise).  If it won't load, the clock falls back to
+ * DejaVu, which Raspberry Pi OS always has, rather than not showing at all. */
+#ifndef CLOCK_FONT
+#define CLOCK_FONT CLOCK_FALLBACK_FONT
 #endif
+#define CLOCK_FALLBACK_FONT "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 struct server;
 struct wlr_scene_buffer;

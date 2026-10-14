@@ -49,6 +49,7 @@ unit.
 - **A Subscribe never ends.** Any further call on that connection drops the client. A subscriber more than `IPC_OUT_MAX` behind is dropped, never waited on.
 - **Scene order is app_layer, then fade_rect, then overlay_layer.** Overlays (the clock) stay visible through a fade, so position `fade_rect` with `place_below(overlay_layer)`, never `raise_to_top`.
 - **The clock has no polling timer.** It uses a `CLOCK_REALTIME` timerfd that is armed for the next minute or second, with `TFD_TIMER_CANCEL_ON_SET`, so an NTP step at boot redraws it at once. Its text is drawn by `clock_render.c`, which is free of wlroots so that `clock-preview` can use it.
+- **The clock font must be static, with fixed-width digits in its character map.** stb_truetype ignores variation axes, so a variable font draws only its default weight. It applies no OpenType features either, so `tnum` can't be asked for. `tools/make-clock-font.py` points 0–9 and `:` at Inter's tabular glyphs instead. With proportional digits the clock changes width every minute.
 - **The interface file is the source of truth.** `tools/embed.py` compiles `src/io.pipanel.Compositor.varlink` into the binary. Edit the file, not a C string.
 
 ## wlroots 0.19 specifics

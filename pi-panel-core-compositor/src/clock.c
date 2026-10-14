@@ -82,11 +82,7 @@ static const struct wlr_buffer_impl clock_buffer_impl = {
  * Font
  * ---------------------------------------------------------------------------*/
 
-static bool load_font(struct clock_state *cs, const char **err) {
-    if (cs->font_ready) {
-        return true;
-    }
-    const char *path = CLOCK_DEFAULT_FONT;
+static bool load_font_file(struct clock_state *cs, const char *path, const char **err) {
     FILE *f = fopen(path, "rb");
     if (!f) {
         wlr_log(WLR_ERROR, "Clock: cannot open font %s: %s", path, strerror(errno));
@@ -118,6 +114,17 @@ static bool load_font(struct clock_state *cs, const char **err) {
     cs->font_ready = true;
     wlr_log(WLR_INFO, "Clock: font %s", path);
     return true;
+}
+
+static bool load_font(struct clock_state *cs, const char **err) {
+    if (cs->font_ready) {
+        return true;
+    }
+    if (load_font_file(cs, CLOCK_FONT, err)) {
+        return true;
+    }
+    return strcmp(CLOCK_FONT, CLOCK_FALLBACK_FONT) != 0
+        && load_font_file(cs, CLOCK_FALLBACK_FONT, err);
 }
 
 /* ---------------------------------------------------------------------------

@@ -45,10 +45,12 @@ OS already has configured. Plain Debian trixie only carries 0.18.
 that would need an `apt install`.
 
 For the same reason, [stb_truetype](https://github.com/nothings/stb) 1.26
-(public domain / MIT) is vendored there too. It draws the clock from a TTF on
-the Pi, by default DejaVu Sans Bold (`-Dclock_font=PATH` changes it). To look
-at the rasterizer's output without a compositor, run
-`build/clock-preview FONT.ttf "12:34" 64 > clock.pam`.
+(public domain / MIT) is vendored there too. It draws the clock from a TTF.
+By default that is `fonts/InterDisplayClock-SemiBold.ttf`: Inter Display
+with fixed-width digits (SIL OFL; [fonts/README.md](fonts/README.md) says how
+it is made). `-Dclock_font=PATH` picks another. If the font won't load, the
+clock uses DejaVu Sans Bold. To look at the rasterizer's output without a
+compositor, run `build/clock-preview FONT.ttf "12:34" 64 > clock.pam`.
 
 ## Build
 
