@@ -167,6 +167,42 @@ def test_next_drops_untimed_holds_but_not_timed_ones():
     assert e.decide().showing == "cam"
 
 
+def test_switch_to_an_app_in_the_rotation_moves_the_rotation():
+    clock = FakeClock(WED_1500)
+    e = engine(clock)
+    e.decide()
+    e.show("cam", priority=10)                   # e.g. music playing
+    assert e.switch_to("clock") is None
+    d = e.decide()
+    assert (d.showing, d.reason) == ("clock", "rotation") and e.holds == {}
+    clock.advance(59)                            # the picked entry gets its full period
+    assert e.decide().showing == "clock"
+    clock.advance(1)
+    assert e.decide().showing == "photos"
+
+
+def test_switch_to_an_app_outside_the_rotation_holds_it_once():
+    clock = FakeClock(WED_1500)
+    e = engine(clock, available=("photos", "clock", "cam", "music"))
+    e.show("music", priority=10)
+    first = e.switch_to("cam")
+    assert e.decide().showing == "cam" and list(e.holds) == [first]
+    second = e.switch_to("cam")                  # picked again: replaced, not stacked
+    assert list(e.holds) == [second]
+    e.switch_to("photos")
+    assert e.holds == {} and e.decide().showing == "photos"
+
+
+def test_switch_to_keeps_timed_holds():
+    clock = FakeClock(WED_1500)
+    e = engine(clock)
+    e.show("cam", seconds=30, priority=50)       # a doorbell
+    e.switch_to("clock")
+    assert e.decide().showing == "cam"
+    clock.advance(30)
+    assert e.decide().showing == "clock"
+
+
 def test_hold_on_app_without_window_still_decides_it():
     """The daemon switches once the window maps; the engine should not
     silently fall back to the rotation while the hold is live."""

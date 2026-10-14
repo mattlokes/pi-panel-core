@@ -312,7 +312,7 @@ class Ctl:
         description = files("pi_panel_ctl.interfaces").joinpath(
             "io.pipanel.Ctl.varlink").read_text(encoding="utf-8")
         iface = Interface(description)
-        for name in ("GetState", "ListApps", "Show", "Release", "Next", "Previous",
+        for name in ("GetState", "ListApps", "Show", "Release", "Next", "Previous", "SwitchTo",
                      "PauseRotation", "ResumeRotation", "GetRotations", "SetRotation",
                      "RemoveRotation", "SelectRotation", "GetSchedules", "SetSchedule",
                      "RemoveSchedule", "SetClock", "EnablePackage", "RestartPackage",
@@ -357,6 +357,13 @@ class Ctl:
 
     async def v_Previous(self, call: Call) -> None:
         self.engine.step(-1)
+        self.kick()
+
+    async def v_SwitchTo(self, call: Call) -> None:
+        app = call.param("app", str)
+        self._require_app(app)
+        token = self.engine.switch_to(app)
+        log.info("switch to %s%s", app, f" (hold {token})" if token else "")
         self.kick()
 
     async def v_PauseRotation(self, call: Call) -> None:

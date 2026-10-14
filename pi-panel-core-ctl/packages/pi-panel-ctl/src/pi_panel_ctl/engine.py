@@ -107,8 +107,7 @@ class Engine:
     def step(self, delta: int) -> None:
         """Next (+1) / Previous (-1). Also drops holds that never expire: a
         pinned app is the thing a user pressing 'next' wants to move away from."""
-        for token in [t for t, h in self.holds.items() if h.expires_at is None]:
-            del self.holds[token]
+        self._drop_untimed_holds()
         rotation = self._rotation_in_effect()
         entries = self._entries(rotation)
         if not entries:
@@ -116,6 +115,31 @@ class Engine:
         if self._cursor.rotation != rotation:
             self._reset_cursor(rotation)
         self._advance(entries, delta)
+
+    def switch_to(self, app: str) -> str | None:
+        """A person picked |app|: show it now. Like step(), this first drops
+        holds that never expire, whoever asked for them; timed holds stay.
+        An app in the rotation is reached by moving the rotation to it, so
+        the rotation carries on from there. Any other app gets a hold that
+        never expires, which the next step() or switch_to() drops again.
+        Returns that hold's token, or None."""
+        self._drop_untimed_holds()
+        name = self._rotation_in_effect()
+        entries = self._entries(name)
+        rotation = self.rotations.get(name)
+        matches = [i for i in entries if rotation and rotation.entries[i].app == app]
+        if not matches:
+            return self.show(app)
+        if self._cursor.rotation != name:
+            self._reset_cursor(name)
+        if self._cursor.index not in matches:
+            self._cursor.index = matches[0]
+        self._cursor.since = self.clock.monotonic()
+        return None
+
+    def _drop_untimed_holds(self) -> None:
+        for token in [t for t, h in self.holds.items() if h.expires_at is None]:
+            del self.holds[token]
 
     def pause(self) -> None:
         self.paused = True

@@ -138,6 +138,22 @@ async def test_hold_waits_for_window(workdir):
         await until(lambda: p.compositor.active == "cam")
 
 
+async def test_switch_to_overrides_an_untimed_hold(workdir):
+    async with Panel(workdir, APPS, enabled=["photos", "clock", "cam"]) as p:
+        await until(lambda: "cam" in p.compositor.slots)
+        for app in ("photos", "clock", "cam"):
+            p.compositor.map(app)
+        await p.call("Show", {"app": "cam", "priority": 10})     # e.g. music playing
+        await until(lambda: p.compositor.active == "cam")
+        await p.call("SwitchTo", {"app": "clock"})                # in the rotation: no hold
+        await until(lambda: p.compositor.active == "clock")
+        state = (await p.call("GetState"))["state"]
+        assert (state["reason"], state["holds"]) == ("rotation", [])
+        with pytest.raises(VarlinkError) as exc:
+            await p.call("SwitchTo", {"app": "nope"})
+        assert exc.value.error == f"{CTL}.NoSuchApp"
+
+
 async def test_errors(workdir):
     async with Panel(workdir, APPS, enabled=["photos"]) as p:
         with pytest.raises(VarlinkError) as exc:

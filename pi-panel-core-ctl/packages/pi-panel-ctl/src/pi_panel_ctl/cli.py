@@ -80,6 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("app")
     s.add_argument("--seconds", type=float, default=None, help="default: until released")
     s.add_argument("--priority", type=int, default=0)
+    s = sub.add_parser("switch", help="show an app now, as if picked (drops untimed holds)")
+    s.add_argument("app")
     s = sub.add_parser("release", help="end a hold")
     s.add_argument("token")
     for name, helptext in (("next", "next app in the rotation"),
@@ -158,6 +160,8 @@ async def run(args: argparse.Namespace) -> int:
         if args.seconds is not None:
             params["seconds"] = args.seconds
         print((await call("Show", params))["token"])
+    elif cmd == "switch":
+        await call("SwitchTo", {"app": args.app})
     elif cmd == "release":
         await call("Release", {"token": args.token})
     elif cmd in ("next", "prev", "pause", "resume"):

@@ -5,7 +5,8 @@
 # stack, highest first:
 #
 #   holds      Show() requests, e.g. "doorbell camera for 30s at priority 50";
-#              without seconds a hold lasts until Release(), Next() or Previous()
+#              without seconds a hold lasts until Release(), Next(),
+#              Previous() or SwitchTo()
 #   schedules  time-window rules, e.g. "power off 23:00-06:30"
 #   rotation   the selected playlist, cycling through its mapped apps
 #
@@ -104,6 +105,12 @@ method Release(token: string) -> ()
 # Step the rotation. Also drops holds that have no expiry.
 method Next() -> ()
 method Previous() -> ()
+
+# A person picked this app: show it now. Like Next(), this drops holds that
+# have no expiry (an app's own "while playing" hold too); timed holds stay.
+# An app in the rotation is reached by moving the rotation to it. Any other
+# app is held until Next(), Previous() or the next SwitchTo().
+method SwitchTo(app: string) -> ()
 
 method PauseRotation() -> ()
 method ResumeRotation() -> ()

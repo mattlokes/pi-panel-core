@@ -47,7 +47,8 @@ back.
 ```bash
 pi-panel-ctl status                     # what is showing, and why
 pi-panel-ctl apps
-pi-panel-ctl show camera --seconds 30 --priority 50
+pi-panel-ctl show camera --seconds 30 --priority 50   # a hold, as an app or automation asks
+pi-panel-ctl switch immich              # as a person picks: drops holds without an expiry
 pi-panel-ctl next | prev | pause | resume
 pi-panel-ctl rotation set default immich:300 clock:60
 pi-panel-ctl schedule set night --start 23:00 --end 06:30 --action power_off --priority 10
