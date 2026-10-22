@@ -33,10 +33,12 @@ installed with `pi-panel-pkg`.
 
 ## Installing a panel
 
-On Raspberry Pi OS (trixie), as the panel user `pi`:
+On Raspberry Pi OS (trixie, Lite is enough), as the panel user `pi`.
+[PACKAGES.md](PACKAGES.md) says what each package is for and which are build-only:
 
 ```bash
-sudo apt install libwlroots-0.19-dev libwayland-dev libwayland-bin wayland-protocols \
+sudo apt install --no-install-recommends git \
+                 libwlroots-0.19-dev libwayland-dev libwayland-bin wayland-protocols \
                  libxkbcommon-dev libpixman-1-dev libdrm-dev meson ninja-build pkg-config
 curl -LsSf https://astral.sh/uv/install.sh | sh
 

@@ -16,6 +16,8 @@ The target is `pi@jazz` (Raspberry Pi 5, trixie, arm64, uid 1000).
 - Do not run process-name patterns (`pgrep -f …`) inline over SSH, because they match your own session. Use `systemctl` and `systemd-run --user` units instead.
 - On jazz, logs from user units are not in `journalctl --user`. Query them with `journalctl _SYSTEMD_USER_UNIT=<unit>`.
 
+`pi@prime` is the **production** panel (Pi 5, Raspberry Pi OS Lite trixie, NVMe). It is installed from GitHub clones, the way the README describes, not rsync. Develop on jazz. Its sudo needs a password too. It was built up from Lite to measure [PACKAGES.md](PACKAGES.md). Keep it free of anything that isn't recorded there.
+
 ```bash
 rsync -a --delete --exclude .git --exclude .venv --exclude build --exclude __pycache__ \
     ./ pi@jazz:~/pi-panel-core/
