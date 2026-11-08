@@ -61,7 +61,7 @@ You can run it again safely after updates.
 Then add something to show:
 
 ```bash
-pi-panel-pkg install https://github.com/mattlokes/pi-panel-app-immich.git
+pi-panel-pkg install https://github.com/mattlokes/pi-panel-immich.git
 pi-panel-ctl enable immich
 ```
 
