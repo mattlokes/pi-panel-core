@@ -54,7 +54,7 @@ class Discovery:
         }
 
     def _package_device(self, app: dict[str, Any]) -> dict[str, Any]:
-        """"Pi Panel (jazz) - Music", connected via the panel."""
+        """"Pi Panel (jazz) - Immich", connected via the panel."""
         name = app["name"]
         device = {
             "identifiers": [f"{self.node_id}_{_slug(name)}"],
