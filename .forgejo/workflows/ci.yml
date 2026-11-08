@@ -1,0 +1,76 @@
+# Push CI on starscream (Pi 4, host executor, label arm64). See
+# /srv/build/runner-notes/RUNNER.md for what the runner has installed.
+# The runner has no Node, so there are no JS actions: checkout is plain git.
+name: ci
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    runs-on: arm64
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SERVER: ${{ github.server_url }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      REF: ${{ github.ref }}
+      # -march/-mcpu/-mtune or =native would tie a Pi 4 build to the Pi 4.
+      BAD_FLAGS: '-m(arch|cpu|tune)\b|=native\b'
+    steps:
+      - name: checkout
+        run: |
+          set -euo pipefail
+          auth="Authorization: Basic $(printf 'ci:%s' "$TOKEN" | base64 -w0)"
+          rm -rf ws && mkdir ws
+          git init -q ws/pi-panel-core
+          cd ws/pi-panel-core
+          git -c http.extraHeader="$auth" fetch -q --depth=1 "$SERVER/$REPO.git" "$SHA" \
+            || git -c http.extraHeader="$auth" fetch -q --depth=1 "$SERVER/$REPO.git" "$REF"
+          git checkout -q --detach FETCH_HEAD
+          git log -1 --format='%h %s'
+          [ "$(git rev-parse HEAD)" = "$SHA" ] || echo "::warning::checked out $(git rev-parse --short HEAD), not ${SHA:0:7}"
+
+      - name: guard against CPU-specific build flags
+        working-directory: ws/pi-panel-core
+        run: |
+          if git grep -nIE -e "$BAD_FLAGS" -- . ':!.forgejo/' ':!*.md'; then
+            echo "::error::CPU-specific compiler flags found (see above). Pi 4 builds must stay valid on the Pi 5."
+            exit 1
+          fi
+          for v in CFLAGS CXXFLAGS CPPFLAGS LDFLAGS; do
+            if grep -qE -e "$BAD_FLAGS" <<<"${!v:-}"; then echo "::error::\$$v has CPU-specific flags: ${!v}"; exit 1; fi
+          done
+          echo "no CPU-specific flags"
+
+      - name: compositor build
+        working-directory: ws/pi-panel-core/pi-panel-core-compositor
+        run: |
+          meson setup build
+          ninja -C build -j2
+
+      - name: compositor flags as built
+        working-directory: ws/pi-panel-core/pi-panel-core-compositor
+        run: |
+          if grep -nE -e "$BAD_FLAGS" build/compile_commands.json build/build.ninja; then
+            echo "::error::the compositor was compiled or linked with CPU-specific flags"
+            exit 1
+          fi
+          echo "no CPU-specific flags in compile_commands.json or build.ninja"
+
+      - name: ctl tests (ctl, varlink, tui-kit)
+        working-directory: ws/pi-panel-core/pi-panel-core-ctl
+        run: |
+          uv sync --frozen --all-packages
+          uv run --frozen pytest -q
+
+      - name: pluginman tests (manifest, registry, install)
+        working-directory: ws/pi-panel-core/pi-panel-core-pluginman
+        run: |
+          uv sync --frozen
+          uv run --frozen pytest -q
