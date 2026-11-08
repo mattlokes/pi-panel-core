@@ -23,6 +23,13 @@ rsync -a --delete --exclude .git --exclude .venv --exclude build --exclude __pyc
     ./ pi@jazz:~/pi-panel-core/
 ```
 
+## Remotes and CI
+
+- **`origin`** is Forgejo: `git@forgejo.internal:matt/<repo>.git`. The web UI is https://forgejo.matts-homelab.com/. The repos are private and are the primary copy. The repos are `pi-panel-core`, `pi-panel-immich`, `pi-panel-now-playing` and `pi-panel-webrtc-client`.
+- **`github`** is `git@github.com:mattlokes/<repo>.git`, public. Forgejo push-mirrors to it on every push. Treat it as read-only and don't push to it directly. Prime and the pluginman `packages.json` sources install from the GitHub URLs.
+- **CI** is `.forgejo/workflows/ci.yml` with `runs-on: arm64`. It runs on **starscream**, a Pi 4 with 1.8 GiB RAM, using the host executor as user `forgejo-runner`. Keep builds at `-j2` or lower. Never put `-march`, `-mcpu` or `native` in build flags: the Pi 4 builds must stay valid on the Pi 5.
+- Don't push unless asked to at that moment.
+
 ## Layout contract (shared by every pi-panel repo)
 
 - **Directory names are load-bearing.** Other repos depend on the shared libraries by the relative path `../../pi-panel-core/pi-panel-core-ctl/packages/...`, and pluginman uses `../pi-panel-core-ctl/packages/...`. Installed packages go to `~/pi-panel-apps/<name>` and `~/pi-panel-plugin/<name>`, next to `~/pi-panel-core`. Unit files hard-code `/home/pi/pi-panel-core/...`. Don't rename directories.
