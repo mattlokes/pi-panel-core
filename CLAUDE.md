@@ -26,8 +26,7 @@ rsync -a --delete --exclude .git --exclude .venv --exclude build --exclude __pyc
 Jazz runs this layout since 2026-11-09 (plan 2). The apps are image packages in
 `/opt/pi-panel/pi-panel-apps`, installed from their GitHub mirrors: jazz cannot
 reach Forgejo (the 10.x network). Update one with `pi-panel-pkg update --image
-<name>`. The old `~/pi-panel-core`, `~/pi-panel-apps` and `~/.config/pi-panel`
-are still there, unused, for rollback (the old install.sh, then a restart).
+<name>`. The old home-directory install was deleted on 2026-11-09.
 
 ## Remotes and CI
 
