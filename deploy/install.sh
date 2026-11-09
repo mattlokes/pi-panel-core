@@ -120,6 +120,16 @@ echo "== linger for $PANEL_USER (keeps /run/user/<uid> across compositor restart
 loginctl enable-linger "$PANEL_USER"
 
 echo "== migrating from the old layout"
+# The MQTT bridge used to be the plugin pi-panel-plugin@mqtt; it is now
+# pi-panel-mqtt.service, which ctl runs from panel.toml's [mqtt]. Stop the old
+# instance: a restart of pi-panel.target would restart it too (PartOf=), and
+# it then fails in a loop, since mqtt is no longer an installed package.
+if systemctl is-active --quiet pi-panel-plugin@mqtt.service 2>/dev/null \
+   || systemctl is-failed --quiet pi-panel-plugin@mqtt.service 2>/dev/null; then
+    systemctl stop pi-panel-plugin@mqtt.service
+    systemctl reset-failed pi-panel-plugin@mqtt.service 2>/dev/null || true
+    echo "   stopped pi-panel-plugin@mqtt.service (the bridge is now pi-panel-mqtt.service)"
+fi
 if [ -f "$USER_HOME/.bash_profile" ] && grep -q pi-panel-session "$USER_HOME/.bash_profile"; then
     mv "$USER_HOME/.bash_profile" "$USER_HOME/.bash_profile.pre-pi-panel"
     echo "   moved ~/.bash_profile aside (it started the old compositor on tty1)"
