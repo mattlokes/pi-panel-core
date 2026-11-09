@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
@@ -95,7 +96,7 @@ APPS = {
 
 async def test_startup_starts_enabled_units_and_registers_app_slots(workdir):
     async with Panel(workdir, APPS, enabled=["photos", "clock", "mqtt"]) as p:
-        await until(lambda: set(p.compositor.slots) == {"photos", "clock"})
+        await until(lambda: set(p.compositor.slots) == {"photos", "clock", "welcome"})
         assert p.units.state("pi-panel-app@photos.service") == "active"
         assert p.units.state("pi-panel-plugin@mqtt.service") == "active"
         assert p.units.state("pi-panel-app@cam.service") != "active"
@@ -225,14 +226,20 @@ async def test_rescan_picks_up_new_packages(workdir):
 
 async def test_compositor_restart_reregisters_slots(workdir):
     async with Panel(workdir, APPS, enabled=["photos", "clock"]) as p:
-        await until(lambda: set(p.compositor.slots) == {"photos", "clock"})
+        await until(lambda: set(p.compositor.slots) == {"photos", "clock", "welcome"})
         await p.compositor.stop()
         await until(lambda: not p.ctl.compositor.online)
         assert (await p.call("GetState"))["state"]["compositor_online"] is False
+        # BindsTo= stops the Wayland clients with the compositor.
+        for unit in ("pi-panel-app@photos.service", "pi-panel-welcome.service"):
+            p.units.set_state(unit, "inactive")
 
         p.compositor = FakeCompositor(p.comp_path)   # a fresh compositor knows nothing
         await p.compositor.start()
-        await until(lambda: set(p.compositor.slots) == {"photos", "clock"}, timeout=5)
+        await until(lambda: set(p.compositor.slots) == {"photos", "clock", "welcome"}, timeout=5)
+        # ...and ctl starts them again.
+        await until(lambda: p.units.state("pi-panel-app@photos.service") == "active")
+        await until(lambda: p.units.state("pi-panel-welcome.service") == "active")
 
 
 async def test_subscribe_streams_state_changes(workdir):
@@ -297,6 +304,95 @@ async def test_power_follows_schedule(workdir):
         await until(lambda: p.compositor.power is True)
         await p.call("Release", {"token": token})
         await until(lambda: p.compositor.power is False)
+
+
+# --- the welcome screen -------------------------------------------------------
+
+WELCOME_UNIT = "pi-panel-welcome.service"
+
+
+async def test_welcome_slot_and_unit_are_always_there(workdir):
+    async with Panel(workdir, APPS, enabled=[]) as p:
+        await until(lambda: "welcome" in p.compositor.slots)
+        assert p.compositor.slots["welcome"]["match_unit"] == WELCOME_UNIT
+        assert p.units.state(WELCOME_UNIT) == "active"
+        # Not a package: never listed, never unregistered as "uninstalled".
+        assert "welcome" not in [a["name"] for a in (await p.call("ListApps"))["apps"]]
+        await p.call("Rescan")
+        assert "welcome" in p.compositor.slots
+
+
+async def test_welcome_shows_when_nothing_else_can(workdir):
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        await until(lambda: "welcome" in p.compositor.slots and "photos" in p.compositor.slots)
+        p.compositor.map("photos")
+        p.compositor.map("welcome")
+        await until(lambda: p.compositor.active == "photos")
+        # The only app's window goes: the welcome screen, not black.
+        p.compositor.unmap("photos")
+        await until(lambda: p.compositor.active == "welcome")
+        state = (await p.call("GetState"))["state"]
+        assert state["showing"] is None and state["reason"] == "none"
+        # It comes back: welcome hands over.
+        p.compositor.map("photos")
+        await until(lambda: p.compositor.active == "photos")
+
+
+async def test_welcome_returns_when_the_last_app_is_disabled(workdir):
+    async with Panel(workdir, APPS, enabled=[]) as p:
+        await until(lambda: "welcome" in p.compositor.slots)
+        p.compositor.map("welcome")
+        await until(lambda: p.compositor.active == "welcome")
+        await p.call("EnablePackage", {"name": "photos", "enabled": True})
+        await until(lambda: "photos" in p.compositor.slots)
+        p.compositor.map("photos")
+        await until(lambda: p.compositor.active == "photos")
+        await p.call("EnablePackage", {"name": "photos", "enabled": False})
+        await until(lambda: p.compositor.active == "welcome")
+
+
+async def test_power_off_schedule_beats_the_welcome_screen(workdir):
+    async with Panel(workdir, APPS, enabled=[]) as p:
+        await until(lambda: "welcome" in p.compositor.slots)
+        await p.call("SetSchedule", {"schedule": {
+            "name": "always", "days": "daily", "start": "00:00", "end": "23:59",
+            "action": "power_off", "priority": 1}})
+        await until(lambda: p.compositor.power is False)
+        p.compositor.map("welcome")   # the fake activates a first window itself
+        p.compositor.switches.clear()
+        await asyncio.sleep(0.1)
+        assert p.compositor.power is False and p.compositor.switches == []
+
+
+async def test_a_package_named_welcome_is_ignored(workdir):
+    async with Panel(workdir, {**APPS, "welcome": {"kind": "app"}}, enabled=["welcome"]) as p:
+        await until(lambda: "welcome" in p.compositor.slots)
+        assert p.compositor.slots["welcome"]["match_unit"] == WELCOME_UNIT
+        assert p.units.state("pi-panel-app@welcome.service") == "unknown"
+
+
+# --- CheckConfig ---------------------------------------------------------------
+
+async def test_check_config_reports_package_checks_and_panel_toml(workdir):
+    fail = f"{sys.executable} -c \"import sys; sys.exit('bad url in config.toml')\""
+    ok = f"{sys.executable} -c \"print('fine')\""
+    packages = {**APPS,
+                "photos": {"kind": "app", "path": str(workdir), "check": fail},
+                "clock": {"kind": "app", "path": str(workdir), "check": ok}}
+    async with Panel(workdir, packages, enabled=["photos", "clock", "nothere"]) as p:
+        results = (await p.call("CheckConfig"))["results"]
+        assert results[0] == {"name": "panel.toml", "status": "ok", "detail": ""}
+        by_name = {r["name"]: r for r in results}
+        assert by_name["photos"]["status"] == "failed"
+        assert "bad url" in by_name["photos"]["detail"]
+        assert by_name["clock"] == {"name": "clock", "status": "ok", "detail": "fine"}
+        assert by_name["nothere"]["status"] == "warning"
+
+        # A hand edit that Reload would refuse still shows up.
+        path = workdir / "panel.toml"
+        path.write_text(path.read_text() + "\ncolour = 1\n")
+        results = (await p.call("CheckConfig"))["results"]
+        assert results[0]["status"] == "failed" and "colour" in results[0]["detail"]
 
 
 def test_interface_files_parse_with_varlinkctl(tmp_path):

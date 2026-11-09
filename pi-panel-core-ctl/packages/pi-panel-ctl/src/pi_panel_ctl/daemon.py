@@ -36,7 +36,7 @@ from pi_panel_varlink import (
     sd_notify,
 )
 
-from . import paths
+from . import configdir, paths
 from .compositor import CompositorLink
 from .config import CtlConfig, resolve_path
 from .engine import Clock, Engine, SystemClock
@@ -49,6 +49,11 @@ log = logging.getLogger("pi-panel-ctl")
 IFACE = "io.pipanel.Ctl"
 VERSION = "0.1.0"
 MQTT_UNIT = "pi-panel-mqtt.service"
+# The welcome screen: a core component, not a package. Its slot is always
+# registered and its unit always runs; it is shown whenever nothing else is
+# (see _pass). The name is reserved: a package called "welcome" is ignored.
+WELCOME_SLOT = "welcome"
+WELCOME_UNIT = "pi-panel-welcome.service"
 RUNNING = ("active", "activating", "reloading")
 APP_CALL_TIMEOUT = 2.0
 
@@ -73,7 +78,7 @@ class Ctl:
         self.image_registry_path = image_registry_path
         self.config = CtlConfig.load(config_path)
         self._base = self.config.to_toml()   # what the file holds, for merging saves
-        self.packages: dict[str, Package] = load_registries(image_registry_path, registry_path)
+        self.packages: dict[str, Package] = self._load_packages()
         self.units = units
         self.units.on_change = lambda unit, state: self.kick()
         self.compositor = CompositorLink(compositor_address, on_change=self.kick)
@@ -93,6 +98,8 @@ class Ctl:
         self._interfaces: dict[str, list[str]] = {}  # app -> interfaces from GetInfo
         self._clock_refused: dict[str, Any] | None = None  # not resent until it changes
         self._mqtt_applied: dict[str, Any] | None = None   # [mqtt] the bridge was started with
+        self._was_online = False   # the compositor, as of the last pass
+        self._check: asyncio.Task[list[configdir.Result]] | None = None  # CheckConfig in flight
         self._tasks: set[asyncio.Task[Any]] = set()
         self.server: Server | None = None
 
@@ -133,6 +140,13 @@ class Ctl:
         await self.reconcile_packages()
         self.events.publish({"kind": "config_changed", "state": self.state_dict()})
         self.kick()
+
+    def _load_packages(self) -> dict[str, Package]:
+        packages = load_registries(self.image_registry_path, self.registry_path)
+        if packages.pop(WELCOME_SLOT, None) is not None:
+            log.warning("ignoring the installed package %r: the name is reserved for the "
+                        "core welcome screen", WELCOME_SLOT)
+        return packages
 
     def _apps(self) -> list[Package]:
         return [p for p in self.packages.values() if p.kind == "app"]
@@ -176,16 +190,24 @@ class Ctl:
                 if pkg.kind == "app":
                     await self.compositor.unregister(pkg.name)
                     self.engine.release_app(pkg.name)
-        for name in self.compositor.wanted() - set(self.packages):
+        for name in self.compositor.wanted() - set(self.packages) - {WELCOME_SLOT}:
             await self.compositor.unregister(name)   # uninstalled
         self._sync_rotations()
         await self.reconcile_core_units()
         self.kick()
 
     async def reconcile_core_units(self) -> None:
-        """The core's optional units, driven by panel.toml rather than by
-        packages: pi-panel-mqtt.service runs while [mqtt] enabled = true, and is
-        restarted when the [mqtt] table changes (it reads it only at start)."""
+        """The core's own units, driven by ctl rather than by packages.
+
+        pi-panel-welcome.service always runs, in the always-registered slot
+        "welcome". pi-panel-mqtt.service runs while [mqtt] enabled = true, and
+        is restarted when the [mqtt] table changes (it reads it only at start)."""
+        await self.compositor.register(WELCOME_SLOT, match_unit=WELCOME_UNIT)
+        if await self.units.watch(WELCOME_UNIT) not in RUNNING:
+            try:
+                await self.units.start(WELCOME_UNIT)
+            except UnitError as exc:
+                log.error("cannot start %s: %s", WELCOME_UNIT, exc.message)
         want = self.config.mqtt_enabled()
         running = await self.units.watch(MQTT_UNIT) in RUNNING
         try:
@@ -210,7 +232,8 @@ class Ctl:
         decision = decision or self.engine.decide()
         mono = self.engine.clock.monotonic()
         return {
-            "showing": self.compositor.active,
+            # The welcome screen is what shows when nothing is: not an app.
+            "showing": None if self.compositor.active == WELCOME_SLOT else self.compositor.active,
             "reason": decision.reason,
             "output_power": self.compositor.output_power if self.compositor.online else decision.power,
             "rotation": decision.rotation,
@@ -268,14 +291,26 @@ class Ctl:
         self.engine.set_available(available)
         decision = self.engine.decide()
 
+        if comp.online and not self._was_online:
+            # A (re)started compositor: BindsTo= took the welcome screen and
+            # the apps down with the old one, and systemd does not restart a
+            # unit it stopped on purpose. Start them again.
+            self._spawn(self.reconcile_packages())
+        self._was_online = comp.online
+
         if comp.online:
             if decision.power != comp.output_power:
                 await comp.set_power(decision.power)
             # Never pile switches onto a fade in progress: its end is an event
             # that kicks another pass, which re-evaluates from the new state.
-            if (decision.power and decision.showing and decision.showing in available
-                    and decision.showing != comp.active and not comp.transitioning):
-                await comp.switch(decision.showing, self.config.transition)
+            # Nothing to show (nothing enabled, or no enabled app has a
+            # window): the welcome screen, rather than black.
+            target = decision.showing if decision.showing in available else None
+            if target is None and decision.reason == "none" and WELCOME_SLOT in comp.mapped():
+                target = WELCOME_SLOT
+            if (decision.power and target and target != comp.active
+                    and not comp.transitioning):
+                await comp.switch(target, self.config.transition)
             await self._sync_clock()
         else:
             self._clock_refused = None   # a restarted compositor gets another try
@@ -365,7 +400,7 @@ class Ctl:
                      "PauseRotation", "ResumeRotation", "GetRotations", "SetRotation",
                      "RemoveRotation", "SelectRotation", "GetSchedules", "SetSchedule",
                      "RemoveSchedule", "SetClock", "EnablePackage", "RestartPackage",
-                     "Rescan", "Reload", "Subscribe"):
+                     "Rescan", "Reload", "CheckConfig", "Subscribe"):
             iface.add_method(name, getattr(self, f"v_{name}"))
         return iface
 
@@ -528,7 +563,7 @@ class Ctl:
             raise _err("UnitFailed", unit=unit, message=exc.message)
 
     async def v_Rescan(self, call: Call) -> dict[str, Any]:
-        self.packages = load_registries(self.image_registry_path, self.registry_path)
+        self.packages = self._load_packages()
         log.info("rescanned: %d package(s) installed", len(self.packages))
         await self.reconcile_packages()
         return {"apps": self.apps_list()}
@@ -538,6 +573,16 @@ class Ctl:
             await self.reload()
         except ValidationError as exc:
             raise _err("InvalidConfig", message=str(exc))
+
+    async def v_CheckConfig(self, call: Call) -> dict[str, Any]:
+        # Checks run commands for up to a minute each: off the loop, and one
+        # run at a time however many callers ask.
+        if self._check is None or self._check.done():
+            self._check = asyncio.get_running_loop().create_task(asyncio.to_thread(
+                configdir.check, self.config_path.parent, dict(self.packages)))
+        results = await asyncio.shield(self._check)
+        return {"results": [{"name": r.name, "status": r.status, "detail": r.detail}
+                            for r in results]}
 
     async def v_Subscribe(self, call: Call) -> None:
         call.require_more()

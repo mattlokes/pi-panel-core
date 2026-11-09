@@ -33,6 +33,8 @@ rotate = true               # default; false keeps it out of the implicit rotati
 (`pi-panel-app@immich`), the compositor slot, the install directory, and the
 MQTT topic level. That's why it is restricted to lowercase letters, digits,
 `-` and `_`.
+`welcome` is reserved: it is the core's welcome screen, the slot shown when
+no app is.
 
 ## `[run]`
 

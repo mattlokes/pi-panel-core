@@ -74,3 +74,14 @@ jobs:
         run: |
           uv sync --frozen
           uv run --frozen pytest -q
+
+      - name: welcome tests (info, status, ctl client)
+        working-directory: ws/pi-panel-core/pi-panel-core-welcome
+        run: |
+          uv venv --system-site-packages --python /usr/bin/python3 --allow-existing
+          uv sync --frozen
+          uv run --frozen pytest -q
+
+      - name: welcome import smoke (GTK 4 through the system PyGObject)
+        working-directory: ws/pi-panel-core/pi-panel-core-welcome
+        run: .venv/bin/python -c 'import pi_panel_welcome.__main__, pi_panel_welcome.ui.window; print("imports ok")'

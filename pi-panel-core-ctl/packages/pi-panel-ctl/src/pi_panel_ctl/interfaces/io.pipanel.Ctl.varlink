@@ -74,6 +74,7 @@ type Hold (
 )
 
 type State (
+  # null when nothing is: the core's welcome screen is then on screen
   showing: ?string,
   reason: (hold, schedule, rotation, none),
   output_power: bool,
@@ -145,6 +146,20 @@ method Rescan() -> (apps: []App)
 # Re-read panel.toml and apply it (after a hand edit; SIGHUP does the same).
 # An invalid file fails with InvalidConfig and the running config stays.
 method Reload() -> ()
+
+# One result of CheckConfig: panel.toml first, then each enabled package.
+type CheckResult (
+  # "panel.toml", or a package name
+  name: string,
+  status: (ok, failed, warning),
+  # the error, a warning, or the last line of a check's output
+  detail: string
+)
+
+# Validate the config directory as `pi-panel-ctl config check` does: parse
+# panel.toml from disk (so a file that Reload refused still shows its error)
+# and run each enabled package's [config] check. Can take a while.
+method CheckConfig() -> (results: []CheckResult)
 
 # Stream events; must be called with "more". Starts with a snapshot.
 method Subscribe() -> (event: Event)

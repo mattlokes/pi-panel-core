@@ -87,6 +87,7 @@ def test_manifest_round_trip(tmp_path):
 
 @pytest.mark.parametrize("patch,message", [
     ({"package": {"name": "Bad Name", "kind": "app"}}, "lowercase"),
+    ({"package": {"name": "welcome", "kind": "app"}}, "reserved"),
     ({"package": {"name": "x", "kind": "widget"}}, "kind"),
     ({"run": {"exec": ""}}, "run.exec"),
     ({"run": {"exec": "a ${nope}"}}, "unknown variable"),

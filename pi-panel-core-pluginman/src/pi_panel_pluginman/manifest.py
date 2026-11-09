@@ -40,6 +40,8 @@ from typing import Any
 FILENAME = "pi-panel.toml"
 KINDS = ("app", "plugin")
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
+# Taken by the core: the welcome screen's compositor slot (pi-panel-ctl).
+RESERVED_NAMES = frozenset({"welcome"})
 _DEB = re.compile(r"^[a-z0-9][a-z0-9.+-]+(:[a-z0-9]+)?$")
 _VAR = re.compile(r"\$\{(\w+)\}")
 VARIABLES = ("config_dir", "package_dir", "name", "runtime_dir")
@@ -93,6 +95,8 @@ class Manifest:
             raise ManifestError(
                 f"package.name {name!r} must be lowercase letters, digits, '-' or '_' "
                 "(it becomes a systemd instance and an MQTT topic level)")
+        if name in RESERVED_NAMES:
+            raise ManifestError(f"package.name {name!r} is reserved by pi-panel-core")
         kind = _str(pkg, "package.kind")
         if kind not in KINDS:
             raise ManifestError(f"package.kind must be one of {', '.join(KINDS)}")

@@ -35,7 +35,14 @@ already in Lite.
 ```
 libwlroots-0.19         # compositor; its Depends bring in Mesa (libegl-mesa0, mesa-libgallium, libgbm1, libgles2)
 git                     # pi-panel-pkg clones packages; also how the core itself is fetched
+python3-gi              # the welcome screen (pi-panel-core-welcome): PyGObject, seen through its venv's system site-packages
+gir1.2-gtk-4.0          # the welcome screen: GTK 4
 ```
+
+The two welcome-screen packages are the same ones the GTK apps (now-playing)
+already list, so a panel with now-playing installed needs nothing new. They
+were added in plan 3 and have not been measured on a fresh Lite (prime has
+them through now-playing); plan 4 re-baselines this file for minbase anyway.
 
 The compositor needs no fonts. Its clock font is in
 `pi-panel-core-compositor/fonts/`, and DejaVu Sans is only the fallback.
@@ -51,8 +58,10 @@ The compositor needs no fonts. Its clock font is in
   (cd pi-panel-core-compositor && meson setup build && ninja -C build)
   (cd pi-panel-core-ctl       && uv sync --frozen --compile-bytecode --all-packages)
   (cd pi-panel-core-pluginman && uv sync --frozen --compile-bytecode)
+  (cd pi-panel-core-welcome   && uv venv --system-site-packages --python /usr/bin/python3 --allow-existing \
+                              && uv sync --frozen --compile-bytecode)
   ```
-  The unit files run from these paths: `build/` and the two `.venv`s. Neither can be moved after building: the venvs have absolute shebangs, and meson bakes the clock font's path.
+  The unit files run from these paths: `build/` and the three `.venv`s. Neither can be moved after building: the venvs have absolute shebangs, and meson bakes the clock font's path.
 
 - **The MQTT bridge** (`pi-panel-core-ctl/packages/pi-panel-mqtt`) needs nothing from apt: aiomqtt and paho-mqtt come from PyPI through ctl's `uv.lock`, into ctl's venv. It was the separate plugin `pi-panel-plugin-mqtt` until plan 2; that measured no apt packages either.
 

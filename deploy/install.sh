@@ -11,12 +11,14 @@
 #     /persistent/pi-panel/config     panel.toml, apps/<name>/config.toml, compositor.env
 #     /persistent/pi-panel/state      packages.json, staging
 #
-# It expects the three core components built and synced first, in place (as
+# It expects the four core components built and synced first, in place (as
 # the user, no root; venvs and the compositor's font path are not movable):
 #
 #     pi-panel-core-compositor   meson setup build && ninja -C build
 #     pi-panel-core-ctl          uv sync --frozen --compile-bytecode --all-packages
 #     pi-panel-core-pluginman    uv sync --frozen --compile-bytecode
+#     pi-panel-core-welcome      uv venv --system-site-packages --python /usr/bin/python3 --allow-existing
+#                                && uv sync --frozen --compile-bytecode
 #
 # Safe to run again after pulling updates: it only copies files, links the
 # commands, creates missing directories and reloads systemd. It never starts
@@ -30,6 +32,7 @@ PERSISTENT=/persistent/pi-panel
 COMPOSITOR=$CORE/pi-panel-core-compositor
 CTL=$CORE/pi-panel-core-ctl
 PLUGINMAN=$CORE/pi-panel-core-pluginman
+WELCOME=$CORE/pi-panel-core-welcome
 USER_HOME=$(getent passwd "$PANEL_USER" | cut -d: -f6)
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -53,6 +56,7 @@ need "$COMPOSITOR/deploy/start"               "pull the latest pi-panel-core"
 need "$CTL/.venv/bin/pi-panel-ctld"            "in $CTL: uv sync --frozen --compile-bytecode --all-packages"
 need "$CTL/.venv/bin/pi-panel-mqtt"            "in $CTL: uv sync --frozen --compile-bytecode --all-packages"
 need "$PLUGINMAN/.venv/bin/pi-panel-run"       "in $PLUGINMAN: uv sync --frozen --compile-bytecode"
+need "$WELCOME/.venv/bin/pi-panel-welcome"     "in $WELCOME: uv venv --system-site-packages --python /usr/bin/python3 --allow-existing && uv sync --frozen --compile-bytecode"
 
 # The unit files hard-code the layout and User=pi.
 if [ "$CORE" != "$OPT/pi-panel-core" ]; then
@@ -73,6 +77,7 @@ for f in \
     "$CORE/deploy/systemd/pi-panel.slice" \
     "$CTL/deploy/systemd/pi-panel-ctl.service" \
     "$CTL/deploy/systemd/pi-panel-mqtt.service" \
+    "$WELCOME/deploy/systemd/pi-panel-welcome.service" \
     "$COMPOSITOR/deploy/systemd/pi-panel-compositor.service" \
     "$PLUGINMAN/deploy/systemd/pi-panel-app@.service" \
     "$PLUGINMAN/deploy/systemd/pi-panel-plugin@.service"

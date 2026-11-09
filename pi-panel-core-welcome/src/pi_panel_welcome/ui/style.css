@@ -1,0 +1,66 @@
+/* Sizes in "u": design pixels on a 1920x1080 screen, scaled by window.py. */
+
+window.welcome {
+  background: radial-gradient(circle at 50% 35%, #1d2a3a 0%, #0b0f15 70%);
+  color: #e8edf3;
+  font-family: "Inter", sans-serif;
+}
+
+.mark {
+  font-size: 30u;
+  font-weight: 700;
+  letter-spacing: 6u;
+  color: #6fb3ff;
+}
+
+.hostname {
+  font-size: 128u;
+  font-weight: 700;
+}
+
+.facts {
+  font-size: 34u;
+  color: #a9b6c6;
+}
+
+.headline {
+  font-size: 54u;
+  font-weight: 600;
+  margin-top: 40u;
+}
+
+.hint {
+  font-size: 32u;
+  color: #c4ceda;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+
+.problems {
+  background: rgba(255, 92, 92, 0.12);
+  border: 2u solid rgba(255, 92, 92, 0.45);
+  border-radius: 18u;
+  padding: 22u 32u;
+  margin-top: 30u;
+}
+
+.problem-name {
+  font-size: 30u;
+  font-weight: 700;
+  color: #ff8a8a;
+}
+
+.problem-name.warning {
+  color: #ffc46b;
+}
+
+.problem-detail {
+  font-size: 26u;
+  color: #f3dede;
+  font-family: "DejaVu Sans Mono", monospace;
+}
+
+/* Plan 5's update / OTA status. Empty, and kept out of sight, until then. */
+.updates {
+  font-size: 28u;
+  color: #a9b6c6;
+}

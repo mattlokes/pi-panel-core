@@ -10,6 +10,7 @@ installed with `pi-panel-pkg`.
 | [`pi-panel-core-compositor/`](pi-panel-core-compositor) | a kiosk Wayland compositor (wlroots, C). It shows one app at a time and has no configuration: slots are registered at runtime. |
 | [`pi-panel-core-ctl/`](pi-panel-core-ctl) | `pi-panel-ctld`, the central daemon that decides what is shown and runs the apps; the `pi-panel-ctl` CLI and TUI; and the shared Python libraries (`pi-panel-varlink`, `pi-panel-tui-kit`) |
 | [`pi-panel-core-pluginman/`](pi-panel-core-pluginman) | `pi-panel-pkg` (install apps and plugins from git or tarballs; CLI and TUI), `pi-panel-run`, and the unit templates that run every package |
+| [`pi-panel-core-welcome/`](pi-panel-core-welcome) | the welcome screen (GTK 4): shown whenever no app is, with the panel's name, addresses, version, and what to do next (including config errors) |
 | [`deploy/`](deploy) | `install.sh`, plus the files that tie the pieces together: `pi-panel.target`, `pi-panel.slice`, and the polkit rule |
 
 ## How it fits together
@@ -21,6 +22,7 @@ installed with `pi-panel-pkg`.
   wlroots, tty1, no config            decides what is shown
         ▲  Varlink (private)                │ starts/stops over D-Bus (polkit)
         └─── RegisterSlot/Switch/Subscribe ─┤
+                                            ├──▶ pi-panel-welcome.service        (shown when no app is)
                                             ├──▶ pi-panel-app@immich.service     (apps: on screen)
   CLI, TUIs, plugins, apps ──Varlink──▶ ctl ├──▶ pi-panel-app@clock.service
      io.pipanel.Ctl                         ├──▶ pi-panel-plugin@<name>.service  (plugins: helpers)
@@ -40,7 +42,7 @@ On Raspberry Pi OS (trixie, Lite is enough), as the panel user `pi`.
 [PACKAGES.md](PACKAGES.md) says what each package is for and which are build-only:
 
 ```bash
-sudo apt install --no-install-recommends git \
+sudo apt install --no-install-recommends git python3-gi gir1.2-gtk-4.0 \
                  libwlroots-0.19-dev libwayland-dev libwayland-bin wayland-protocols \
                  libxkbcommon-dev libpixman-1-dev libdrm-dev meson ninja-build pkg-config
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -51,6 +53,8 @@ cd /opt/pi-panel/pi-panel-core
 (cd pi-panel-core-compositor && meson setup build && ninja -C build)
 (cd pi-panel-core-ctl       && uv sync --frozen --compile-bytecode --all-packages)
 (cd pi-panel-core-pluginman && uv sync --frozen --compile-bytecode)
+(cd pi-panel-core-welcome   && uv venv --system-site-packages --python /usr/bin/python3 --allow-existing \
+                            && uv sync --frozen --compile-bytecode)
 sudo deploy/install.sh          # the only root step
 sudo reboot
 ```
@@ -122,6 +126,7 @@ cd /opt/pi-panel/pi-panel-core && git pull
 (cd pi-panel-core-compositor && ninja -C build)
 (cd pi-panel-core-ctl && uv sync --frozen --compile-bytecode --all-packages)
 (cd pi-panel-core-pluginman && uv sync --frozen --compile-bytecode)
+(cd pi-panel-core-welcome && uv sync --frozen --compile-bytecode)
 sudo deploy/install.sh            # only if deploy/ or a unit file changed
 systemctl restart pi-panel.target
 pi-panel-pkg update               # apps and plugins
@@ -134,6 +139,7 @@ Each component tests offline: no Pi, root or broker is needed.
 ```bash
 (cd pi-panel-core-ctl && uv sync --all-packages && uv run pytest)
 (cd pi-panel-core-pluginman && uv sync && uv run pytest)
+(cd pi-panel-core-welcome && uv venv --system-site-packages --allow-existing && uv sync && uv run pytest)
 ```
 
 The compositor builds only where wlroots 0.19 is installed (the Pi). Its

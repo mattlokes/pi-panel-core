@@ -1,0 +1,30 @@
+[Unit]
+Description=pi-panel welcome screen
+Documentation=file:/opt/pi-panel/pi-panel-core/pi-panel-core-welcome/README.md
+PartOf=pi-panel.target
+# A Wayland client of the compositor, like an app: it goes down with it and
+# is started again by pi-panel-ctl when it comes back.
+BindsTo=pi-panel-compositor.service
+After=pi-panel-compositor.service pi-panel-ctl.service
+# Started by pi-panel-ctl, which keeps it running in the slot "welcome" and
+# shows it whenever no app is; never by a WantedBy= of its own (no [Install]).
+
+[Service]
+Type=exec
+User=pi
+Group=pi
+Slice=pi-panel.slice
+SyslogIdentifier=pi-panel-welcome
+
+# The compositor's Wayland socket; the program adds XDG_RUNTIME_DIR, as
+# pi-panel-run does for apps.
+Environment=WAYLAND_DISPLAY=pi-panel-0 GDK_BACKEND=wayland
+# As for the GTK apps: no accessibility bus, and GL rather than Vulkan.
+Environment=GTK_A11Y=none GDK_DISABLE=vulkan
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=/opt/pi-panel/pi-panel-core/pi-panel-core-welcome/.venv/bin/pi-panel-welcome
+
+Restart=always
+RestartSec=2
+TimeoutStopSec=5

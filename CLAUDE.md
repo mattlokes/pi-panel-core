@@ -1,8 +1,9 @@
 # pi-panel-core
 
-One repo with three components: `pi-panel-core-compositor` (C/wlroots),
-`pi-panel-core-ctl` (the daemon plus the shared Python libraries) and
-`pi-panel-core-pluginman`. `deploy/` holds the panel-wide files and
+One repo with four components: `pi-panel-core-compositor` (C/wlroots),
+`pi-panel-core-ctl` (the daemon plus the shared Python libraries),
+`pi-panel-core-pluginman` and `pi-panel-core-welcome` (the GTK 4 screen shown
+when no app is). `deploy/` holds the panel-wide files and
 `install.sh`. Each component has its own CLAUDE.md with its design points.
 
 Apps (`../pi-panel-apps/*`) and plugins (`../pi-panel-plugin/*`) are
@@ -51,6 +52,7 @@ reach Forgejo (the 10.x network). Update one with `pi-panel-pkg update --image
   - `io.pipanel.Ctl` is the panel's public API.
   - `io.pipanel.App` is served by apps.
   - The `.varlink` files are served verbatim and must pass `varlinkctl validate-idl`.
+- **Reserved name `welcome`:** the compositor slot of the core's welcome screen (`pi-panel-welcome.service`). pluginman refuses it as a package name, and ctl ignores an installed package with it.
 
 ## Git
 
