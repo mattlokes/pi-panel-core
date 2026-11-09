@@ -19,8 +19,15 @@ uv venv --system-site-packages --python /usr/bin/python3 --allow-existing
 uv sync && uv run pytest                     # offline, no GTK needed
 
 # On a Pi with GTK: the screen with pretend apps and errors, as a PNG.
-.venv/bin/pi-panel-welcome --demo --size 1920x1080 --screenshot /tmp/welcome.png
+WAYLAND_DISPLAY=pi-panel-0 .venv/bin/pi-panel-welcome --demo --size 1920x1080 --screenshot /tmp/welcome.png
+# The same, with the live panel's state from ctl (what the panel shows now).
+WAYLAND_DISPLAY=pi-panel-0 .venv/bin/pi-panel-welcome --size 1920x1080 --screenshot /tmp/welcome.png
 ```
+
+The compositor has no screencopy (`grim` does not work), so `--screenshot` is
+how to see the screen remotely. A screenshot window is outside every slot and
+gets no frame callbacks, so it is drawn only once: a live `--screenshot`
+waits for ctl's answer (checks included), then stops updating.
 
 PyGObject and GTK 4 come from apt (`python3-gi`, `gir1.2-gtk-4.0`, see the
 core's PACKAGES.md), which the venv sees through `--system-site-packages`.
