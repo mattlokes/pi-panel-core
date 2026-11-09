@@ -43,6 +43,7 @@ class Package:
     varlink: bool = False
     rotate: bool = True     # in the implicit default rotation (a camera app says no)
     origin: str = "state"   # "image" or "state": which registry it came from
+    check: str | None = None  # [config] check, with ${config_dir} etc. unresolved
 
 
 def load_registries(image: Path | None, state: Path) -> dict[str, Package]:
@@ -77,5 +78,6 @@ def load_registry(path: Path, origin: str = "state") -> dict[str, Package]:
             varlink=bool(entry.get("varlink", False)),
             rotate=bool(entry.get("rotate", True)),
             origin=origin,
+            check=entry.get("check") if isinstance(entry.get("check"), str) else None,
         )
     return out

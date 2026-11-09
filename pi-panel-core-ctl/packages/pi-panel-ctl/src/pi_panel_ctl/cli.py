@@ -10,12 +10,14 @@ import argparse
 import asyncio
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from pi_panel_varlink import Client, ProtocolError, VarlinkError, VarlinkTimeout, VarlinkUnavailable
 
-from . import paths
-from .model import CLOCK_POSITIONS
+from . import configdir, paths
+from .model import CLOCK_POSITIONS, ValidationError
+from .packages import load_registries
 
 CTL = "io.pipanel.Ctl"
 
@@ -138,8 +140,60 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("name")
     x.add_argument("action")
 
+    c = sub.add_parser("config", help="check, export or import the config directory")
+    cs = c.add_subparsers(dest="ccmd", required=True)
+    x = cs.add_parser("check", help="validate panel.toml and every enabled package's config")
+    x.add_argument("--dir", type=Path, default=None, help=f"default: {paths.config_home()}")
+    x = cs.add_parser("export", help="write the config directory to a .tar.gz")
+    x.add_argument("file", nargs="?", type=Path, default=None,
+                   help="default: pi-panel-config-<host>-<time>.tar.gz here")
+    x = cs.add_parser("import", help="check an exported config, then install it and reload")
+    x.add_argument("file", type=Path)
+
     sub.add_parser("tui", help="interactive terminal UI")
     return p
+
+
+def _print_results(results: list) -> None:
+    for r in results:
+        label = {"ok": "ok", "failed": "FAILED", "warning": "warning"}[r.status]
+        lines = (r.detail or "").splitlines() or [""]
+        print(f"{label:<8} {r.name:<16} {lines[0]}".rstrip())
+        for line in lines[1:]:
+            print(f"{'':<25} {line}")
+
+
+async def run_config(args: argparse.Namespace, call) -> int:
+    """`config ...`: local file operations; only import talks to ctld."""
+    packages = load_registries(paths.image_registry(), paths.registry())
+    home = paths.config_home()
+    if args.ccmd == "check":
+        results = await asyncio.to_thread(configdir.check, args.dir or home, packages)
+        _print_results(results)
+        return 1 if configdir.failed(results) else 0
+    if args.ccmd == "export":
+        dest = args.file or Path(configdir.default_export_name())
+        names = configdir.export(home, dest)
+        print(f"wrote {dest} ({len(names)} entries from {home})")
+        return 0
+    try:
+        results, backup = await asyncio.to_thread(
+            configdir.install, home, args.file, packages, paths.data_home() / "config-backups")
+    except ValidationError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    _print_results(results)
+    if backup is None:
+        print(f"not imported: {args.file} does not pass its checks; nothing changed",
+              file=sys.stderr)
+        return 1
+    print(f"imported into {home} (the previous config is in {backup})")
+    try:
+        await call("Reload")
+        print("reloaded")
+    except (VarlinkUnavailable, VarlinkTimeout, ProtocolError):
+        print("pi-panel-ctld is not running; it reads the new config when it starts")
+    return 0
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -150,6 +204,8 @@ async def run(args: argparse.Namespace) -> int:
         return await ctl.call(f"{CTL}.{method}", params)
 
     cmd = args.cmd
+    if cmd == "config":
+        return await run_config(args, call)
     if cmd == "status":
         state = (await call("GetState"))["state"]
         print(json.dumps(state, indent=2) if args.json else _fmt_state(state))

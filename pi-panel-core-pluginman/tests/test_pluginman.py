@@ -92,6 +92,8 @@ def test_manifest_round_trip(tmp_path):
     ({"run": {"exec": "a ${nope}"}}, "unknown variable"),
     ({"run": {"exec": "a 'unclosed"}}, "run.exec"),
     ({"config": {"templates": ["../../etc/passwd"]}}, "inside the package"),
+    ({"config": {"check": "x --check ${nope}"}}, "config.check: unknown variable"),
+    ({"config": {"check": ""}}, "config.check is empty"),
     ({"extra": {}}, "unknown section"),
     ({"package": {"name": "x", "kind": "plugin"}, "app": {"varlink": True}}, "only for kind"),
 ])
@@ -429,3 +431,14 @@ async def test_extra_package_reaches_the_core_by_relative_path(panel_home, tmp_p
     await Manager(output=Lines()).install(str(make_package(tmp_path / "p", name="extra")))
     dest = paths.package_dir("app", "extra")
     assert (dest / "../../pi-panel-core/lib/marker").read_text() == "core\n"
+
+
+async def test_config_check_is_recorded_unresolved(panel_home, tmp_path):
+    pkg = make_package(tmp_path / "p")
+    manifest = (pkg / "pi-panel.toml").read_text()
+    (pkg / "pi-panel.toml").write_text(manifest.replace(
+        "[config]\n", '[config]\ncheck = "python3 main.py --check ${config_dir}/conf.yaml"\n'))
+    assert Manifest.load(pkg).check == "python3 main.py --check ${config_dir}/conf.yaml"
+    entry = await Manager(output=Lines()).install(str(pkg))
+    assert entry.check == "python3 main.py --check ${config_dir}/conf.yaml"
+    assert json.loads(paths.registry().read_text())["packages"]["demo"]["check"] == entry.check

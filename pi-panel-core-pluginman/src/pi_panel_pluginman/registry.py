@@ -7,7 +7,7 @@ There are two, with the same format:
 
 `Registry` reads both and merges them; on a name clash the image wins (and a
 warning says so). pluginman writes them; pi-panel-ctl reads them (name, kind,
-version, description, path, varlink, rotate). Anything else here is
+version, description, path, varlink, rotate, check). Anything else here is
 pluginman's own bookkeeping.
 
     {"version": 1, "packages": {"immich": {
@@ -53,6 +53,10 @@ class Entry:
     description: str | None = None
     varlink: bool = False
     rotate: bool = True
+    # [config] check from the manifest, unresolved: ctl substitutes ${config_dir}
+    # etc. itself, so `pi-panel-ctl config import` can check a config tree
+    # before it is installed.
+    check: str | None = None
     installed_at: str = field(default_factory=lambda: datetime.now(timezone.utc)
                               .isoformat(timespec="seconds"))
     origin: str = STATE            # which registry it is in; not stored
@@ -72,6 +76,7 @@ class Entry:
             version=data.get("version"), description=data.get("description"),
             varlink=bool(data.get("varlink", False)),
             rotate=bool(data.get("rotate", True)),
+            check=data.get("check"),
             installed_at=data.get("installed_at", ""),
         )
 

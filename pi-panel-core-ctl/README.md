@@ -76,6 +76,20 @@ through the API are merged into the file, keeping its comments and any other
 hand edits. A file still called `ctl.toml` is read when there is no
 `panel.toml`, with a warning to rename it.
 
+The whole config directory (panel.toml, each package's `apps/<name>/` and
+`plugins/<name>/`, and an optional compositor.env) is the one thing to back
+up:
+
+```bash
+pi-panel-ctl config check            # panel.toml (with [mqtt]) and every enabled package's [config] check
+pi-panel-ctl config export [FILE]    # a .tar.gz of the directory
+pi-panel-ctl config import FILE      # checks it first; then backs up the current one, installs it, reloads
+```
+
+These run locally as the panel user, without ctld. `import` changes nothing
+unless every check passes, and keeps the previous config in
+`/persistent/pi-panel/state/config-backups/`.
+
 ## Development
 
 ```bash

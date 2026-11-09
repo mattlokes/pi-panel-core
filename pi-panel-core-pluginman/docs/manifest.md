@@ -70,6 +70,20 @@ Each file listed in `templates` is copied into `${config_dir}` on install,
 without its `.example` suffix, but only if the target does not already exist.
 Your edits therefore survive updates.
 
+`check` is an optional command that validates the package's config, with the
+same variables as `[run] exec` (and, like it, split into words, never run by
+a shell). It must exit 0 for a good config, and otherwise print what is wrong
+and exit non-zero. It must not need the display, the network or the running
+panel: `pi-panel-ctl config check` runs it for every enabled package, and
+`pi-panel-ctl config import` runs it against a config tree before installing
+it, with `${config_dir}` pointing into that tree.
+
+```toml
+[config]
+templates = ["config.toml.example"]
+check = ".venv/bin/my-app --check-config ${config_dir}/config.toml"
+```
+
 ## `[system]`
 
 `packages` lists the Debian packages the package needs at runtime, such as

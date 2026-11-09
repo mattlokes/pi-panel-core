@@ -59,6 +59,7 @@ class Manifest:
     env: dict[str, str] = field(default_factory=dict)
     build: str | None = None
     templates: tuple[str, ...] = ()
+    check: str | None = None          # [config] check: validates the package's config
     varlink: bool = False
     rotate: bool = True
     system_packages: tuple[str, ...] = ()
@@ -99,15 +100,7 @@ class Manifest:
             raise ManifestError("[app] is only for kind = \"app\"")
 
         exec_ = _str(run, "run.exec")
-        try:
-            argv = shlex.split(exec_)
-        except ValueError as exc:
-            raise ManifestError(f"run.exec: {exc}") from None
-        if not argv:
-            raise ManifestError("run.exec is empty")
-        for var in _VAR.findall(exec_):
-            if var not in VARIABLES:
-                raise ManifestError(f"run.exec: unknown variable ${{{var}}}")
+        _command(exec_, "run.exec")
 
         env = run.get("env", {})
         if not isinstance(env, dict) or not all(
@@ -129,6 +122,9 @@ class Manifest:
         for t in templates:
             if Path(t).is_absolute() or ".." in Path(t).parts:
                 raise ManifestError(f"config.templates: {t!r} must be inside the package")
+        check = _opt_str(config, "check") if config else None
+        if check is not None:
+            _command(check, "config.check")
 
         return cls(
             name=name,
@@ -139,6 +135,7 @@ class Manifest:
             env=dict(env),
             build=_opt_str(build, "command") if build else None,
             templates=tuple(templates),
+            check=check,
             varlink=bool(app.get("varlink", False)) if app else False,
             rotate=bool(app.get("rotate", True)) if app else True,
             system_packages=tuple(packages),
@@ -151,6 +148,21 @@ class Manifest:
     def environment(self, variables: dict[str, str]) -> dict[str, str]:
         """`[run].env`, with ${...} substituted in each value."""
         return {k: _VAR.sub(lambda m: variables[m.group(1)], v) for k, v in self.env.items()}
+
+
+def _command(text: str, where: str) -> list[str]:
+    """A shell-like command line (split with shlex, never run by a shell)
+    whose ${...} variables are all known."""
+    try:
+        argv = shlex.split(text)
+    except ValueError as exc:
+        raise ManifestError(f"{where}: {exc}") from None
+    if not argv:
+        raise ManifestError(f"{where} is empty")
+    for var in _VAR.findall(text):
+        if var not in VARIABLES:
+            raise ManifestError(f"{where}: unknown variable ${{{var}}}")
+    return argv
 
 
 def _table(data: dict[str, Any], key: str, required: bool = True) -> dict[str, Any]:

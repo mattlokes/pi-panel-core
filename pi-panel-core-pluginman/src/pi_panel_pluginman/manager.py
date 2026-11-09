@@ -288,7 +288,7 @@ class Manager:
             entry = Entry(
                 name=manifest.name, kind=manifest.kind, path=str(dest), source=source,
                 version=manifest.version, description=manifest.description,
-                varlink=manifest.varlink, rotate=manifest.rotate,
+                varlink=manifest.varlink, rotate=manifest.rotate, check=manifest.check,
                 origin=IMAGE if image else STATE,
             )
             self.registry.put(entry)
