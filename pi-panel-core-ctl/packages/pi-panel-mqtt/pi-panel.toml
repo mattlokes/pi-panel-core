@@ -1,0 +1,16 @@
+[package]
+name = "mqtt"
+kind = "plugin"
+version = "0.2.0"
+description = "Bridges the panel to MQTT, with Home Assistant discovery"
+
+[run]
+exec = ".venv/bin/pi-panel-mqtt --config ${config_dir}/mqtt.toml"
+
+[build]
+# The venv's console script, not `uv run`, at runtime: the Pi boots from a
+# slow USB stick. Precompiled so the first start writes no __pycache__.
+command = "uv sync --frozen --compile-bytecode"
+
+[config]
+templates = ["config/mqtt.toml.example"]

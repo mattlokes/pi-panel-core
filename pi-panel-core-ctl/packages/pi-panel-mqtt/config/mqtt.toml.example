@@ -1,0 +1,33 @@
+# pi-panel MQTT plugin configuration.
+#
+# pi-panel-pkg copies this to ~/.config/pi-panel/plugins/mqtt/mqtt.toml.
+# Precedence: CLI flags > environment (PI_PANEL_MQTT_*) > this file > defaults.
+
+# Top-level keys must appear BEFORE the first [section] header: in TOML a bare
+# key after a header belongs to that section.
+log_level = "INFO"
+
+[ctl]
+# Default: $PI_PANEL_CTL_SOCKET (set by pi-panel-run), else /run/pi-panel/ctl/io.pipanel.Ctl
+socket_path = ""
+
+[mqtt]
+host = "mqtt.home.local"
+port = 1883
+
+# Leave empty for an anonymous broker. Prefer PI_PANEL_MQTT_PASSWORD in the
+# environment to a password stored here; if you do store one, chmod 600.
+username = ""
+password = ""
+
+base_topic = "pi-panel"
+
+# Which panel this is, used in every topic. Empty means this machine's hostname.
+device_id = ""
+
+keepalive = 30
+tls = false
+
+[homeassistant]
+enabled = true
+discovery_prefix = "homeassistant"
