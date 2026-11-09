@@ -88,7 +88,8 @@ def build_parser() -> argparse.ArgumentParser:
                            ("prev", "previous app in the rotation"),
                            ("pause", "pause the rotation"),
                            ("resume", "resume the rotation"),
-                           ("rescan", "re-read installed packages")):
+                           ("rescan", "re-read installed packages"),
+                           ("reload", "re-read panel.toml after a hand edit")):
         sub.add_parser(name, help=helptext)
 
     r = sub.add_parser("rotation", help="list, select, set or remove rotations")
@@ -170,6 +171,9 @@ async def run(args: argparse.Namespace) -> int:
     elif cmd == "rescan":
         apps = (await call("Rescan"))["apps"]
         print(_fmt_apps(apps))
+    elif cmd == "reload":
+        await call("Reload")
+        print("reloaded")
     elif cmd == "rotation":
         if args.rcmd == "list":
             reply = await call("GetRotations")
@@ -254,6 +258,10 @@ def main() -> int:
     except KeyboardInterrupt:
         return 130
     except VarlinkError as exc:
+        if exc.error.endswith(".InvalidConfig"):
+            print(f"error: {exc.parameters.get('message')}\n(the running config is unchanged)",
+                  file=sys.stderr)
+            return 1
         detail = " ".join(f"{k}={v}" for k, v in exc.parameters.items())
         print(f"error: {exc.error.rsplit('.', 1)[-1]} {detail}".rstrip(), file=sys.stderr)
         return 1

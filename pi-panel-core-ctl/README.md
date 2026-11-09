@@ -35,7 +35,7 @@ they can stop working while off screen.
 ## The clock overlay
 
 The compositor can draw the time above whatever app is showing. ctl owns the
-settings: they are kept in the `[clock]` table of ctl.toml, reported in
+settings: they are kept in the `[clock]` table of panel.toml, reported in
 `State.clock`, and changed with `SetClock`, where omitted fields are kept. The
 reconcile pass pushes them to the compositor, including after it restarts. If
 the compositor refuses them (for example, its font is missing), ctl logs the
@@ -67,9 +67,14 @@ varlinkctl introspect /run/pi-panel/ctl/io.pipanel.Ctl io.pipanel.Ctl
 varlinkctl call --more /run/pi-panel/ctl/io.pipanel.Ctl io.pipanel.Ctl.Subscribe '{}'
 ```
 
-Configuration lives in `/persistent/pi-panel/config/ctl.toml`, which covers enabled
-packages, rotations, schedules, the transition style and the clock overlay. ctl writes changes
-made through the API back to this file.
+Configuration lives in `/persistent/pi-panel/config/panel.toml`, which covers enabled
+packages, rotations, schedules, the transition style and the clock overlay
+(`pi_panel_ctl/config.py` documents every key). Edit it by hand, then apply it
+with `pi-panel-ctl reload` (or `systemctl reload pi-panel-ctl`); a file
+that does not validate is refused and the running config stays. Changes made
+through the API are merged into the file, keeping its comments and any other
+hand edits. A file still called `ctl.toml` is read when there is no
+`panel.toml`, with a warning to rename it.
 
 ## Development
 

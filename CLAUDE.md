@@ -40,7 +40,7 @@ Jazz moves to this layout in plan 2 phase F. Until then it still runs the old
 - **Sockets:** `/run/pi-panel/{compositor,ctl,apps/<name>}/`. Each unit owns its own `RuntimeDirectory` leaf.
 - **Files:**
   - code: `/opt/pi-panel` (`PI_PANEL_HOME`), read-only once it ships in an image
-  - config: `/persistent/pi-panel/config` (`PI_PANEL_CONFIG_HOME`): `ctl.toml`, `apps/<name>/` and `plugins/<name>/` for package config, and an optional `compositor.env`
+  - config: `/persistent/pi-panel/config` (`PI_PANEL_CONFIG_HOME`): `panel.toml` (the old name `ctl.toml` is still read), `apps/<name>/` and `plugins/<name>/` for package config, and an optional `compositor.env`
   - state: `/persistent/pi-panel/state` (`PI_PANEL_DATA_HOME`): the registry `packages.json`, written by pluginman and read by ctl, and `staging/`
 - **Environment overrides:** `PI_PANEL_{HOME,CONFIG_HOME,DATA_HOME,RUNTIME_DIR}`. The defaults are the layout above, in both `pi_panel_ctl/paths.py` and `pi_panel_pluginman/paths.py` (a ctl test checks they agree), so CLIs run over SSH find the same files as the units. `PI_PANEL_CONFIG_DIR` is different: it is a package's *own* config directory, set by `pi-panel-run`.
 - **Varlink interfaces:**

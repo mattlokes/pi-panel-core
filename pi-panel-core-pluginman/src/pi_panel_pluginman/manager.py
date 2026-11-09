@@ -302,7 +302,7 @@ class Manager:
         entry = self.registry.get(name)
         if entry is None:
             raise PackageError(f"{name!r} is not installed")
-        # Stop it first (and drop it from ctl.toml), so nothing runs from a
+        # Stop it first (and drop it from panel.toml), so nothing runs from a
         # directory that is about to disappear.
         await self._ctl("EnablePackage", {"name": name, "enabled": False})
         shutil.rmtree(entry.path, ignore_errors=True)

@@ -20,6 +20,8 @@ SyslogIdentifier=pi-panel-ctl
 # reads ~3 MB/s cold. After a dependency change run
 # `uv sync --frozen --compile-bytecode --all-packages` in the repo.
 ExecStart=/opt/pi-panel/pi-panel-core/pi-panel-core-ctl/.venv/bin/pi-panel-ctld
+# Re-read panel.toml after a hand edit; an invalid file is refused (see the log).
+ExecReload=/bin/kill -HUP $MAINPID
 
 Restart=on-failure
 RestartSec=2

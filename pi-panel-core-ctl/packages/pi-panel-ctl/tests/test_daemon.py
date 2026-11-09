@@ -51,7 +51,7 @@ class Panel:
                  **config: Any) -> None:
         self.dir = workdir
         self.registry = workdir / "packages.json"
-        self.config_path = workdir / "ctl.toml"
+        self.config_path = workdir / "panel.toml"
         write_registry(self.registry, packages)
         CtlConfig(enabled=enabled, **config).save(self.config_path)
         self.comp_path = str(workdir / "comp.varlink")
@@ -187,7 +187,7 @@ async def test_rotation_and_schedule_config_is_persisted(workdir):
         rots = await p.call("GetRotations")
         assert rots["selected"] == "evening"
         assert {r["name"] for r in rots["rotations"]} == {"evening", "default"}
-    saved = CtlConfig.load(workdir / "ctl.toml")
+    saved = CtlConfig.load(workdir / "panel.toml")
     assert saved.selected_rotation == "evening"
     assert "evening" in saved.rotations and "default" not in saved.rotations  # implicit one not saved
     assert [s.name for s in saved.schedules] == ["night"]
@@ -201,7 +201,7 @@ async def test_enable_and_disable_package(workdir):
         await p.call("EnablePackage", {"name": "cam", "enabled": False})
         await until(lambda: "cam" not in p.compositor.slots)
         assert p.units.state("pi-panel-app@cam.service") == "inactive"
-    assert CtlConfig.load(workdir / "ctl.toml").enabled == ["photos"]
+    assert CtlConfig.load(workdir / "panel.toml").enabled == ["photos"]
 
 
 async def test_restart_package_reports_unit_failure(workdir):
@@ -350,7 +350,7 @@ async def test_clock_is_applied_persisted_and_reapplied(workdir):
         # A restarted compositor forgets the clock; ctl puts it back.
         p.compositor.reset_clock()
         await until(lambda: p.compositor.clock == {**CLOCK_ON, "size": 48})
-    saved = CtlConfig.load(workdir / "ctl.toml").clock
+    saved = CtlConfig.load(workdir / "panel.toml").clock
     assert saved.to_dict() == {**CLOCK_ON, "size": 48}
 
 
@@ -383,3 +383,39 @@ async def test_clock_refused_by_compositor_is_not_retried_in_a_loop(workdir):
         p.compositor.clock_unavailable = False
         await p.call("SetClock", {"size": 40})
         await until(lambda: p.compositor.clock["enabled"] is True)
+
+
+# --- panel.toml: Reload ------------------------------------------------------
+
+async def test_reload_applies_a_hand_edit(workdir):
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        path = workdir / "panel.toml"
+        path.write_text(path.read_text().replace('enabled = ["photos"]',
+                                                 'enabled = ["photos", "cam"]'))
+        await p.call("Reload")
+        await until(lambda: "cam" in p.compositor.slots)
+        assert p.units.state("pi-panel-app@cam.service") == "active"
+
+
+async def test_reload_refuses_a_bad_file_and_keeps_running_config(workdir):
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        path = workdir / "panel.toml"
+        good = path.read_text()
+        path.write_text(good + "\ncolour = 1\n")
+        with pytest.raises(VarlinkError) as exc:
+            await p.call("Reload")
+        assert exc.value.error == f"{CTL}.InvalidConfig"
+        assert "colour" in exc.value.parameters["message"]
+        assert p.ctl.config.enabled == ["photos"]
+        assert p.units.state("pi-panel-app@photos.service") == "active"
+
+
+async def test_varlink_change_keeps_comments_in_panel_toml(workdir):
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        path = workdir / "panel.toml"
+        path.write_text("# my notes\n" + path.read_text())
+        await p.call("Reload")
+        await p.call("EnablePackage", {"name": "cam", "enabled": True})
+    text = (workdir / "panel.toml").read_text()
+    assert "# my notes" in text
+    assert CtlConfig.load(workdir / "panel.toml").enabled == ["photos", "cam"]

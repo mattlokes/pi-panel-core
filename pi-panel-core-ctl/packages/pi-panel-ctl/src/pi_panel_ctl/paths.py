@@ -37,8 +37,9 @@ def runtime_dir() -> Path:
     return Path(os.environ.get("PI_PANEL_RUNTIME_DIR") or RUNTIME_DIR)
 
 
-def ctl_config() -> Path:
-    return config_home() / "ctl.toml"
+def panel_config() -> Path:
+    """The main config file. (config.resolve_path also accepts the old ctl.toml.)"""
+    return config_home() / "panel.toml"
 
 
 def registry() -> Path:

@@ -64,3 +64,12 @@ async def test_clock(workdir, capsys):  # noqa: F811
 def test_bad_rotation_entry_is_rejected_by_argparse():
     with pytest.raises(SystemExit):
         build_parser().parse_args(["rotation", "set", "x", "no-seconds"])
+
+
+async def test_reload(workdir, capsys):  # noqa: F811
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        path = workdir / "panel.toml"
+        path.write_text(path.read_text().replace('transition = "fade"', 'transition = "cut"'))
+        assert await cli(p, "reload") == 0
+        assert "reloaded" in capsys.readouterr().out
+        assert p.ctl.config.transition == "cut"

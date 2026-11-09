@@ -55,7 +55,7 @@ type App (
 )
 
 # The compositor's clock overlay, drawn above every app. ctl keeps it in
-# ctl.toml and applies it whenever the compositor (re)starts.
+# panel.toml and applies it whenever the compositor (re)starts.
 type Clock (
   enabled: bool,
   # strftime(3) format, in the panel's local time
@@ -126,7 +126,7 @@ method SetSchedule(schedule: Schedule) -> ()
 method RemoveSchedule(name: string) -> ()
 
 # Change the clock overlay. Omitted fields keep their values. Persisted in
-# ctl.toml. format must be 1-63 bytes; size must be 0 or 8-1000.
+# panel.toml. format must be 1-63 bytes; size must be 0 or 8-1000.
 method SetClock(
   enabled: ?bool,
   format: ?string,
@@ -135,12 +135,16 @@ method SetClock(
 ) -> (clock: Clock)
 
 # Enable starts the package's unit (and registers an app's slot); disable
-# stops it. Persisted in ctl.toml.
+# stops it. Persisted in panel.toml.
 method EnablePackage(name: string, enabled: bool) -> ()
 method RestartPackage(name: string) -> ()
 
 # Re-read the installed packages (pi-panel-pkg calls this after changes).
 method Rescan() -> (apps: []App)
+
+# Re-read panel.toml and apply it (after a hand edit; SIGHUP does the same).
+# An invalid file fails with InvalidConfig and the running config stays.
+method Reload() -> ()
 
 # Stream events; must be called with "more". Starts with a snapshot.
 method Subscribe() -> (event: Event)
@@ -152,4 +156,5 @@ error NoSuchHold (token: string)
 error InvalidRotation (rotation: string, reason: string)
 error InvalidSchedule (schedule: string, reason: string)
 error InvalidClock (reason: string)
+error InvalidConfig (message: string)
 error UnitFailed (unit: string, message: string)

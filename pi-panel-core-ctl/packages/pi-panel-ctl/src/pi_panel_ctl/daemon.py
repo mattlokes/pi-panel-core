@@ -38,7 +38,7 @@ from pi_panel_varlink import (
 
 from . import paths
 from .compositor import CompositorLink
-from .config import CtlConfig
+from .config import CtlConfig, resolve_path
 from .engine import Clock, Engine, SystemClock
 from .model import ClockSettings, Rotation, RotationEntry, Schedule, ValidationError
 from .packages import Package, load_registry
@@ -68,6 +68,7 @@ class Ctl:
         self.config_path = config_path
         self.registry_path = registry_path
         self.config = CtlConfig.load(config_path)
+        self._base = self.config.to_toml()   # what the file holds, for merging saves
         self.packages: dict[str, Package] = load_registry(registry_path)
         self.units = units
         self.units.on_change = lambda unit, state: self.kick()
@@ -101,12 +102,32 @@ class Ctl:
         task.add_done_callback(self._tasks.discard)
 
     def _save(self) -> None:
+        """Merge what changed into the file; hand edits to other keys survive."""
         self.config.selected_rotation = self.engine.selected
         self.config.schedules = list(self.engine.schedules)
         try:
-            self.config.save(self.config_path)
+            self._base = self.config.save(self.config_path, self._base)
         except OSError as exc:
             log.error("cannot save %s: %s", self.config_path, exc)
+
+    async def reload(self) -> None:
+        """Re-read the config file and apply it. An invalid file raises
+        ValidationError and the running configuration stays as it was."""
+        new = CtlConfig.load(self.config_path)
+        self.config = new
+        self._base = new.to_toml()
+        self.engine.schedules = list(new.schedules)
+        self._sync_rotations()
+        if new.selected_rotation in self.engine.rotations:
+            self.engine.select_rotation(new.selected_rotation)
+        else:
+            log.warning("selected_rotation %r does not exist; keeping %r",
+                        new.selected_rotation, self.engine.selected)
+        self._clock_refused = None
+        log.info("reloaded %s", self.config_path)
+        await self.reconcile_packages()
+        self.events.publish({"kind": "config_changed", "state": self.state_dict()})
+        self.kick()
 
     def _apps(self) -> list[Package]:
         return [p for p in self.packages.values() if p.kind == "app"]
@@ -235,7 +256,7 @@ class Ctl:
         self._publish(decision)
 
     async def _sync_clock(self) -> None:
-        """Make the compositor's clock overlay match ctl.toml. Its own event
+        """Make the compositor's clock overlay match panel.toml. Its own event
         (clock_changed) kicks the next pass, which then finds nothing to do."""
         want = self.config.clock.to_dict()
         have = self.compositor.clock
@@ -316,7 +337,7 @@ class Ctl:
                      "PauseRotation", "ResumeRotation", "GetRotations", "SetRotation",
                      "RemoveRotation", "SelectRotation", "GetSchedules", "SetSchedule",
                      "RemoveSchedule", "SetClock", "EnablePackage", "RestartPackage",
-                     "Rescan", "Subscribe"):
+                     "Rescan", "Reload", "Subscribe"):
             iface.add_method(name, getattr(self, f"v_{name}"))
         return iface
 
@@ -484,6 +505,12 @@ class Ctl:
         await self.reconcile_packages()
         return {"apps": self.apps_list()}
 
+    async def v_Reload(self, call: Call) -> None:
+        try:
+            await self.reload()
+        except ValidationError as exc:
+            raise _err("InvalidConfig", message=str(exc))
+
     async def v_Subscribe(self, call: Call) -> None:
         call.require_more()
         with self.events.subscribe() as sub:
@@ -516,7 +543,8 @@ class Ctl:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pi-panel-ctld", description="pi-panel control daemon")
-    p.add_argument("--config", type=Path, default=None, help=f"default: {paths.ctl_config()}")
+    p.add_argument("--config", type=Path, default=None,
+                   help=f"default: {paths.panel_config()} (or the old ctl.toml beside it)")
     p.add_argument("--registry", type=Path, default=None, help=f"default: {paths.registry()}")
     p.add_argument("--socket", default=None, help=f"default: {paths.ctl_socket()}")
     p.add_argument("--compositor-socket", default=None,
@@ -531,7 +559,7 @@ async def _amain(args: argparse.Namespace) -> None:
     units = SystemdUnits(user=args.user_units)
     await units.connect()
     ctl = Ctl(
-        config_path=args.config or paths.ctl_config(),
+        config_path=args.config or resolve_path(paths.config_home()),
         registry_path=args.registry or paths.registry(),
         units=units,
         compositor_address=args.compositor_socket or str(paths.compositor_socket()),
@@ -543,6 +571,14 @@ async def _amain(args: argparse.Namespace) -> None:
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
+
+    async def reload_on_hup() -> None:
+        try:
+            await ctl.reload()
+        except ValidationError as exc:
+            log.error("reload refused, keeping the running config: %s", exc)
+
+    loop.add_signal_handler(signal.SIGHUP, lambda: ctl._spawn(reload_on_hup()))
     runner = loop.create_task(ctl.run())
     await stop.wait()
     log.info("shutting down (apps keep running; the compositor keeps its slots)")

@@ -9,8 +9,9 @@ dependencies = [
     "pi-panel-tui-kit",
     # systemd unit control and state tracking over D-Bus, on asyncio.
     "dbus-fast>=2.21",
-    # ctl.toml is read with tomllib; this writes it back after Varlink changes.
-    "tomli-w>=1.0",
+    # panel.toml is read with tomllib, and Varlink changes are merged back into
+    # it with tomlkit, which keeps the comments and layout of a hand-edited file.
+    "tomlkit>=0.13",
 ]
 
 [project.scripts]

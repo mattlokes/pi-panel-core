@@ -191,7 +191,7 @@ class Schedule:
         return d
 
     def to_config(self) -> dict[str, Any]:
-        """For ctl.toml: TOML has no null, so absent keys are simply left out."""
+        """For panel.toml: TOML has no null, so absent keys are simply left out."""
         return {k: v for k, v in self.to_dict().items() if v is not None}
 
 
@@ -199,7 +199,7 @@ class Schedule:
 class ClockSettings:
     """The compositor's clock overlay, as ctl wants it.
 
-    ctl owns these settings (they live in ctl.toml) and the reconcile pass
+    ctl owns these settings (they live in panel.toml) and the reconcile pass
     pushes them to the compositor whenever what it reports differs."""
 
     enabled: bool = False
