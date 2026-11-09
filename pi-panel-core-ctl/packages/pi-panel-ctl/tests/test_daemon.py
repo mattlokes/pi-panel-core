@@ -419,3 +419,49 @@ async def test_varlink_change_keeps_comments_in_panel_toml(workdir):
     text = (workdir / "panel.toml").read_text()
     assert "# my notes" in text
     assert CtlConfig.load(workdir / "panel.toml").enabled == ["photos", "cam"]
+
+
+# --- the MQTT bridge unit -----------------------------------------------------
+
+MQTT_UNIT = "pi-panel-mqtt.service"
+
+
+def edit_mqtt(path: Path, table: str) -> None:
+    text = path.read_text().split("[mqtt]")[0]
+    path.write_text(text + table)
+
+
+async def test_mqtt_unit_follows_panel_toml(workdir):
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        path = workdir / "panel.toml"
+        await until(lambda: p.units.state(MQTT_UNIT) == "inactive")
+        assert ("start", MQTT_UNIT) not in p.units.jobs          # no [mqtt]: no bridge
+
+        edit_mqtt(path, "[mqtt]\nhost = 'broker'\n")
+        await p.call("Reload")
+        assert p.units.state(MQTT_UNIT) == "active"
+
+        p.units.jobs.clear()
+        await p.call("EnablePackage", {"name": "cam", "enabled": True})
+        assert not [j for j in p.units.jobs if j[1] == MQTT_UNIT]   # unchanged: left alone
+
+        edit_mqtt(path, "[mqtt]\nhost = 'other-broker'\n")
+        await p.call("Reload")
+        assert ("restart", MQTT_UNIT) in p.units.jobs             # changed: restarted
+
+        edit_mqtt(path, "[mqtt]\nenabled = false\nhost = 'other-broker'\n")
+        await p.call("Reload")
+        assert p.units.state(MQTT_UNIT) == "inactive"
+
+
+async def test_bad_mqtt_table_is_refused_by_reload(workdir):
+    async with Panel(workdir, APPS, enabled=["photos"]) as p:
+        path = workdir / "panel.toml"
+        edit_mqtt(path, "[mqtt]\nhost = 'broker'\n")
+        await p.call("Reload")
+        edit_mqtt(path, "[mqtt]\nhost = 'broker'\nport = 'x'\n")
+        with pytest.raises(VarlinkError) as exc:
+            await p.call("Reload")
+        assert "port must be an integer" in exc.value.parameters["message"]
+        assert p.units.state(MQTT_UNIT) == "active"
+        assert p.ctl.config.mqtt == {"host": "broker"}

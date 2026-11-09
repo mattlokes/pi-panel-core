@@ -27,7 +27,7 @@ A hold and a schedule compete on priority. On a tie, the hold wins.
 Everything is pushed, nothing is polled:
 - The compositor streams slot and transition events.
 - systemd streams unit state changes.
-- ctl streams its own state to subscribers (`pi-panel-ctl watch`, the TUI, the MQTT plugin).
+- ctl streams its own state to subscribers (`pi-panel-ctl watch`, the TUI, the MQTT bridge).
 
 Apps that serve `io.pipanel.App` are told when they are shown or hidden, so
 they can stop working while off screen.

@@ -116,3 +116,48 @@ def test_resolve_path_prefers_panel_toml_and_falls_back_to_ctl_toml(tmp_path):
     assert resolve_path(tmp_path) == tmp_path / "ctl.toml"
     (tmp_path / "panel.toml").write_text("")
     assert resolve_path(tmp_path) == tmp_path / "panel.toml"
+
+
+# --- [mqtt] -----------------------------------------------------------------
+
+EXAMPLE = __import__("pathlib").Path(__file__).resolve().parents[3] / "panel.toml.example"
+
+
+def test_shipped_example_loads():
+    cfg = CtlConfig.load(EXAMPLE)
+    assert cfg.enabled == ["immich", "now-playing", "webrtc-client"]
+    assert cfg.mqtt_enabled() and cfg.mqtt["host"] == "mqtt.home.local"
+
+
+def test_bad_mqtt_key_is_refused_at_load(tmp_path):
+    path = tmp_path / "panel.toml"
+    path.write_text("[mqtt]\nhost = 'b'\nprot = 1883\n")
+    with pytest.raises(ValidationError, match=r"\[mqtt\] unknown key\(s\): prot"):
+        CtlConfig.load(path)
+
+
+@pytest.mark.parametrize("text, enabled", [
+    ("", False),                                   # no table: no bridge
+    ("[mqtt]\nhost = 'b'\n", True),                # a table means on
+    ("[mqtt]\nenabled = false\n", False),
+])
+def test_mqtt_enabled(tmp_path, text, enabled):
+    path = tmp_path / "panel.toml"
+    path.write_text(text)
+    assert CtlConfig.load(path).mqtt_enabled() is enabled
+
+
+def test_saves_keep_the_mqtt_table(tmp_path):
+    path = tmp_path / "panel.toml"
+    path.write_text("[mqtt]\nhost = 'b'  # the broker\n\n[mqtt.homeassistant]\nenabled = false\n")
+    cfg = CtlConfig.load(path)
+    base = cfg.to_toml()
+    cfg.enabled = ["photos"]
+    cfg.save(path, base)
+    assert "host = 'b'  # the broker" in path.read_text()
+    again = CtlConfig.load(path)
+    assert again.mqtt == {"host": "b", "homeassistant": {"enabled": False}}
+    # A fresh file written from scratch carries it too.
+    other = tmp_path / "other.toml"
+    again.save(other)
+    assert CtlConfig.load(other).mqtt == again.mqtt

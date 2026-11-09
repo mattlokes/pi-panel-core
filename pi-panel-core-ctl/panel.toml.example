@@ -1,0 +1,58 @@
+# pi-panel's main configuration: /persistent/pi-panel/config/panel.toml
+#
+# Edit it by hand, then apply with `pi-panel-ctl reload` (an invalid file is
+# refused and the running config stays). Changes made through pi-panel-ctl and
+# its TUI are merged in, keeping these comments and any other hand edits.
+# The file can hold the MQTT password: keep it 0600.
+#
+# Top-level keys must come before the first [table]: in TOML, a bare key after
+# a table header belongs to that table.
+
+schema = 1
+
+# Packages ctl runs. Apps also go in the default rotation.
+enabled = ["immich", "now-playing", "webrtc-client"]
+
+transition = "fade"            # or "cut"
+default_seconds = 60           # per app in the implicit "default" rotation
+selected_rotation = "default"
+
+# Without a [[rotation]] called "default", ctl rotates through every enabled
+# app (except those whose manifest says rotate = false) for default_seconds.
+# [[rotation]]
+# name = "evening"
+# entries = [{app = "immich", seconds = 300}]
+
+# [[schedule]]
+# name = "night"
+# days = "daily"               # or "mon-fri", "sat,sun", ...
+# start = "23:00"
+# end = "06:30"
+# action = "power_off"         # or "show" (with app = ...) or "rotation" (with rotation = ...)
+# priority = 10
+
+# The compositor's clock overlay.
+[clock]
+enabled = true
+format = "%H:%M"               # strftime(3)
+position = "bottom_left"       # top_left, top_right, bottom_left, bottom_right, center
+size = 150                     # text height in px; 0 = automatic
+
+# The MQTT / Home Assistant bridge. ctl runs pi-panel-mqtt.service while this
+# table exists with enabled = true, and restarts it when the table changes.
+# Leave the table out for no bridge.
+[mqtt]
+enabled = true
+host = "mqtt.home.local"
+port = 1883
+username = ""                  # empty: anonymous
+password = ""                  # or PI_PANEL_MQTT_PASSWORD in a drop-in for pi-panel-mqtt.service
+base_topic = "pi-panel"
+device_id = ""                 # used in every topic; empty: this machine's hostname
+keepalive = 30
+tls = false
+log_level = "INFO"
+
+[mqtt.homeassistant]
+enabled = true                 # publish Home Assistant discovery configs
+discovery_prefix = "homeassistant"

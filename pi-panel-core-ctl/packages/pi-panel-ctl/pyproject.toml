@@ -7,6 +7,8 @@ license = { text = "MIT" }
 dependencies = [
     "pi-panel-varlink",
     "pi-panel-tui-kit",
+    # Only for pi_panel_mqtt.config.validate: ctl checks panel.toml's [mqtt].
+    "pi-panel-mqtt",
     # systemd unit control and state tracking over D-Bus, on asyncio.
     "dbus-fast>=2.21",
     # panel.toml is read with tomllib, and Varlink changes are merged back into
@@ -21,6 +23,7 @@ pi-panel-ctl = "pi_panel_ctl.cli:main"
 [tool.uv.sources]
 pi-panel-varlink = { workspace = true }
 pi-panel-tui-kit = { workspace = true }
+pi-panel-mqtt = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

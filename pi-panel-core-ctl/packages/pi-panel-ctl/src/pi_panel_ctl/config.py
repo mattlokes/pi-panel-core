@@ -30,6 +30,10 @@ Hand edits take effect with `pi-panel-ctl reload` (or SIGHUP, or a restart).
     action = "power_off"
     priority = 10
 
+    [mqtt]                        # the MQTT bridge (pi-panel-mqtt.service); its keys
+    enabled = true                # are documented and checked in pi_panel_mqtt.config
+    host = "mqtt.home.local"
+
 Without a rotation named "default", ctl rotates through every enabled app for
 `default_seconds` each, which is what a fresh install wants.
 
@@ -50,6 +54,8 @@ from typing import Any
 
 import tomlkit
 import tomlkit.exceptions
+from pi_panel_mqtt.config import ConfigError as MqttConfigError
+from pi_panel_mqtt.config import validate as validate_mqtt
 
 from .model import ClockSettings, Rotation, Schedule, ValidationError
 
@@ -58,7 +64,7 @@ log = logging.getLogger("pi-panel-ctl")
 SCHEMA = 1
 TRANSITIONS = ("fade", "cut")
 KNOWN_KEYS = {"schema", "enabled", "selected_rotation", "default_seconds", "transition",
-              "rotation", "schedule", "clock"}
+              "rotation", "schedule", "clock", "mqtt"}
 
 HEADER = """\
 # pi-panel's main configuration.
@@ -86,6 +92,12 @@ class CtlConfig:
     rotations: dict[str, Rotation] = field(default_factory=dict)
     schedules: list[Schedule] = field(default_factory=list)
     clock: ClockSettings = field(default_factory=ClockSettings)
+    # The [mqtt] table as written (validated by pi_panel_mqtt), or None: no bridge.
+    # ctl only decides whether pi-panel-mqtt.service runs; the bridge reads it.
+    mqtt: dict[str, Any] | None = None
+
+    def mqtt_enabled(self) -> bool:
+        return self.mqtt is not None and self.mqtt.get("enabled", True) is True
 
     # --- reading ---------------------------------------------------------
 
@@ -155,6 +167,13 @@ class CtlConfig:
                 raise ValidationError(f"duplicate rotation {rot.name!r}")
             cfg.rotations[rot.name] = rot
 
+        if "mqtt" in data:
+            try:
+                validate_mqtt(data["mqtt"])
+            except MqttConfigError as exc:
+                raise ValidationError(str(exc)) from None
+            cfg.mqtt = data["mqtt"]
+
         for i, raw in enumerate(_tables(data, "schedule")):
             try:
                 sched = Schedule.from_dict(raw)
@@ -179,6 +198,8 @@ class CtlConfig:
             "rotation": [r.to_dict() for r in self.rotations.values()],
             "schedule": [s.to_config() for s in self.schedules],
         }
+        if self.mqtt is not None:
+            data["mqtt"] = self.mqtt
         return data
 
     def save(self, path: Path, base: dict[str, Any] | None = None) -> dict[str, Any]:

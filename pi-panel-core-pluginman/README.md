@@ -1,7 +1,7 @@
 # pi-panel-core-pluginman
 
 The pi-panel package manager. It installs **apps** (things shown on screen)
-and **plugins** (background helpers such as the MQTT bridge) from a git
+and **plugins** (background helpers) from a git
 repository, a tarball, or a local directory.
 
 ```bash

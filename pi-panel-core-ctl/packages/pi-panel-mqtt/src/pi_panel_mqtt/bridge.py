@@ -10,6 +10,13 @@ Both end in `sync()`, which works out every retained topic from memory and
 publishes only what changed. After a broker reconnect the cache is cleared and
 everything is republished, since retained state may have been lost if the
 broker restarted without persistence. Nothing here polls.
+
+Per-app topics (app/<name>/actions and Home Assistant discovery configs) that
+stop being wanted are cleared with an empty retained payload: those this
+process published, by diffing, and those left on the broker by an earlier run
+(an app removed while the bridge was down, the old mqtt plugin's entities), by
+subscribing to them at connect and clearing what the broker replays that ctl
+no longer has.
 """
 
 from __future__ import annotations
@@ -58,7 +65,8 @@ class Bridge:
         # What the broker last got from us.
         self.client: Publisher | None = None
         self._published: dict[str, bytes] = {}
-        self._discovery_topics: set[str] = set()
+        self._managed_topics: set[str] = set()   # per-app retained topics we published
+        self._leftovers: set[str] = set()        # ...and ones the broker replayed at connect
         self._sync_lock = asyncio.Lock()
         self._action_sources: object = None
 
@@ -86,6 +94,27 @@ class Bridge:
                 out[msg.topic] = msg.payload
         return out
 
+    def managed_wildcards(self) -> list[str]:
+        """The per-app retained topics of this device, as subscriptions."""
+        out = [f"{self.topics.prefix}/app/+/actions"]
+        if self.settings.homeassistant.enabled:
+            out.append(f"{self.discovery.prefix}/+/{self.discovery.node_id}/+/config")
+        return out
+
+    def is_managed(self, topic: str) -> bool:
+        if topic.startswith(f"{self.topics.prefix}/app/") and topic.endswith("/actions"):
+            return True
+        prefix = f"{self.discovery.prefix}/"
+        return (self.settings.homeassistant.enabled and topic.startswith(prefix)
+                and topic[len(prefix):].split("/")[1:2] == [self.discovery.node_id])
+
+    async def note_retained(self, topic: str, payload: bytes | str) -> None:
+        """A retained message the broker replayed at subscribe time. If ctl
+        no longer has what it describes, the next sync clears it."""
+        if payload and self.is_managed(topic):
+            self._leftovers.add(topic)
+            await self.sync()
+
     async def sync(self) -> None:
         """Publish whatever differs from what the broker has."""
         async with self._sync_lock:
@@ -93,15 +122,27 @@ class Bridge:
             if client is None:
                 return
             want = self.desired()
-            discovery_now = {k for k in want if k.startswith(self.discovery.prefix + "/")}
-            # Entities that no longer exist: an empty retained config deletes them.
-            for topic in self._discovery_topics - discovery_now:
+            managed_now = {k for k in want if self.is_managed(k)}
+            # Apps and entities that no longer exist: an empty retained payload
+            # deletes the topic (and the Home Assistant entity).
+            stale = self._managed_topics - managed_now
+            if self.state is not None:
+                # Only once ctl has said what exists: before that, everything
+                # would look stale.
+                leftovers = self._leftovers - set(want)
+                for topic in leftovers:
+                    # The broker just showed it still holds this: clear it even
+                    # if our cache says we already did.
+                    self._published.pop(topic, None)
+                stale |= leftovers
+                self._leftovers.clear()
+            for topic in stale:
                 want[topic] = b""
             for topic, payload in want.items():
                 if self._published.get(topic) != payload:
                     await client.publish(topic, payload, qos=1, retain=True)
                     self._published[topic] = payload
-            self._discovery_topics = discovery_now
+            self._managed_topics = managed_now
 
     # --- ctl side --------------------------------------------------------
 
@@ -258,11 +299,17 @@ class Bridge:
             await client.publish(topic, b"", qos=1, retain=True)
         await client.publish(self.topics.availability, ONLINE, qos=1, retain=True)
         await client.subscribe(self.topics.command_wildcard, qos=1)
+        for wildcard in self.managed_wildcards():
+            await client.subscribe(wildcard, qos=1)
         log.info("bridge online: %s", self.topics.prefix)
         await self.sync()
         try:
             async for message in client.messages:
-                await self.handle(str(message.topic), message.payload)
+                topic = str(message.topic)
+                if message.retain and self.is_managed(topic):
+                    await self.note_retained(topic, message.payload)
+                else:
+                    await self.handle(topic, message.payload)
         finally:
             self.client = None
             # A clean disconnect does NOT fire the last will; say it ourselves.

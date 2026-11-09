@@ -1,4 +1,25 @@
-"""Settings, merged from defaults < TOML file < environment < CLI flags."""
+"""The [mqtt] table of panel.toml, merged as defaults < file < environment < CLI.
+
+    [mqtt]
+    enabled = true                 # ctl runs pi-panel-mqtt.service while true
+    host = "mqtt.home.local"
+    port = 1883
+    username = ""                  # empty: anonymous
+    password = ""                  # or PI_PANEL_MQTT_PASSWORD (a unit drop-in)
+    base_topic = "pi-panel"
+    device_id = ""                 # empty: the hostname
+    keepalive = 30
+    tls = false
+    log_level = "INFO"
+
+    [mqtt.homeassistant]
+    enabled = true                 # publish Home Assistant discovery
+    discovery_prefix = "homeassistant"
+
+No [mqtt] table means no bridge. `validate()` is the one checker of the table:
+ctl calls it when it loads panel.toml, so a bad key is refused by
+`pi-panel-ctl reload` before the bridge ever restarts with it.
+"""
 
 from __future__ import annotations
 
@@ -9,13 +30,14 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-# pi-panel-run points PI_PANEL_CONFIG_DIR at this plugin's own config directory.
-DEFAULT_CONFIG_PATH = Path(
-    os.environ.get("PI_PANEL_CONFIG_DIR")
-    or Path.home() / ".config" / "pi-panel" / "plugins" / "mqtt"
-) / "mqtt.toml"
 ENV_PREFIX = "PI_PANEL_MQTT_"
+DEFAULT_CONFIG_HOME = "/persistent/pi-panel/config"   # as pi_panel_ctl.paths
 DEFAULT_CTL_SOCKET = "/run/pi-panel/ctl/io.pipanel.Ctl"
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
+class ConfigError(ValueError):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,17 +71,96 @@ class HomeAssistantSettings:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
+    enabled: bool = True
     ctl: CtlSettings = field(default_factory=CtlSettings)
     mqtt: MqttSettings = field(default_factory=MqttSettings)
     homeassistant: HomeAssistantSettings = field(default_factory=HomeAssistantSettings)
     log_level: str = "INFO"
 
 
-_SECTIONS: dict[str, type] = {
-    "ctl": CtlSettings,
-    "mqtt": MqttSettings,
-    "homeassistant": HomeAssistantSettings,
-}
+# --- validation -------------------------------------------------------------
+
+def _str(key: str, value: Any, *, empty: bool = True, topic: bool = False) -> str:
+    if not isinstance(value, str):
+        raise ConfigError(f"[mqtt] {key} must be a string")
+    if not empty and not value:
+        raise ConfigError(f"[mqtt] {key} must not be empty")
+    if topic and any(c in value for c in "+#\0"):
+        raise ConfigError(f"[mqtt] {key} must not contain + # or NUL (MQTT wildcards)")
+    return value
+
+
+def _int(key: str, value: Any, lo: int, hi: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
+        raise ConfigError(f"[mqtt] {key} must be an integer {lo}-{hi}")
+    return value
+
+
+def _bool(key: str, value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise ConfigError(f"[mqtt] {key} must be true or false")
+    return value
+
+
+_TOP = {"enabled", "host", "port", "username", "password", "base_topic", "device_id",
+        "keepalive", "tls", "log_level", "homeassistant"}
+_HA = {"enabled", "discovery_prefix"}
+
+
+def validate(table: Any) -> Settings:
+    """Settings from an [mqtt] table (environment and CLI not applied).
+    Raises ConfigError for an unknown key or a bad value."""
+    if not isinstance(table, dict):
+        raise ConfigError("[mqtt] must be a table")
+    unknown = set(table) - _TOP
+    if unknown:
+        raise ConfigError(f"[mqtt] unknown key(s): {', '.join(sorted(unknown))}")
+    t = table
+    d = MqttSettings()
+    mqtt = MqttSettings(
+        host=_str("host", t.get("host", d.host), empty=False),
+        port=_int("port", t.get("port", d.port), 1, 65535),
+        username=_str("username", t.get("username", "")) or None,
+        password=_str("password", t.get("password", "")) or None,
+        base_topic=_str("base_topic", t.get("base_topic", d.base_topic), empty=False, topic=True),
+        device_id=_str("device_id", t.get("device_id", d.device_id), topic=True),
+        keepalive=_int("keepalive", t.get("keepalive", d.keepalive), 5, 3600),
+        tls=_bool("tls", t.get("tls", d.tls)),
+    )
+    if "/" in mqtt.device_id:
+        raise ConfigError("[mqtt] device_id must not contain /")
+
+    ha_table = t.get("homeassistant", {})
+    if not isinstance(ha_table, dict):
+        raise ConfigError("[mqtt.homeassistant] must be a table")
+    unknown = set(ha_table) - _HA
+    if unknown:
+        raise ConfigError(f"[mqtt.homeassistant] unknown key(s): {', '.join(sorted(unknown))}")
+    ha = HomeAssistantSettings(
+        enabled=_bool("homeassistant.enabled", ha_table.get("enabled", True)),
+        discovery_prefix=_str("homeassistant.discovery_prefix",
+                              ha_table.get("discovery_prefix", "homeassistant"),
+                              empty=False, topic=True),
+    )
+
+    level = _str("log_level", t.get("log_level", "INFO")).upper()
+    if level not in LOG_LEVELS:
+        raise ConfigError(f"[mqtt] log_level must be one of {', '.join(LOG_LEVELS)}")
+
+    return Settings(enabled=_bool("enabled", t.get("enabled", True)),
+                    mqtt=mqtt, homeassistant=ha, log_level=level)
+
+
+# --- loading ----------------------------------------------------------------
+
+def config_path() -> Path:
+    """panel.toml in the config directory, or the old ctl.toml when only that
+    exists (the same rule as pi-panel-ctl)."""
+    home = Path(os.environ.get("PI_PANEL_CONFIG_HOME") or DEFAULT_CONFIG_HOME)
+    panel = home / "panel.toml"
+    legacy = home / "ctl.toml"
+    return legacy if not panel.exists() and legacy.exists() else panel
+
 
 # env var name -> (section, field). Section None means top level.
 _ENV_MAP: dict[str, tuple[str | None, str]] = {
@@ -75,79 +176,49 @@ _ENV_MAP: dict[str, tuple[str | None, str]] = {
     "DISCOVERY_PREFIX": ("homeassistant", "discovery_prefix"),
     "LOG_LEVEL": (None, "log_level"),
 }
+_ENV_TYPES = {"port": int, "tls": bool, "enabled": bool}
 
 
-def _coerce(target_type: Any, raw: str) -> Any:
-    if target_type is bool or target_type == "bool":
+def _coerce(field_name: str, raw: str) -> Any:
+    target = _ENV_TYPES.get(field_name, str)
+    if target is bool:
         return raw.strip().lower() in {"1", "true", "yes", "on"}
-    if target_type is int:
-        return int(raw)
-    if target_type is float:
-        return float(raw)
+    if target is int:
+        try:
+            return int(raw)
+        except ValueError:
+            raise ConfigError(f"{ENV_PREFIX}{field_name.upper()} must be an integer") from None
     return raw
 
 
-def _field_type(cls: type, name: str) -> Any:
-    hints = {f.name: f.type for f in cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
-    t = hints.get(name, str)
-    # Dataclass field types are strings under `from __future__ import annotations`.
-    if isinstance(t, str):
-        if t.startswith("bool"):
-            return bool
-        if t.startswith("int"):
-            return int
-        if t.startswith("float"):
-            return float
-        return str
-    return t
-
-
 def load(path: Path | None = None, overrides: dict[str, Any] | None = None) -> Settings:
-    """Build Settings from file, environment, then explicit overrides.
-
-    `overrides` carries parsed CLI flags. Only keys whose value is not None are
-    applied, so an unset flag never clobbers a lower-precedence layer.
-    """
-    settings = Settings()
-
-    # --- file ---
-    cfg_path = path or DEFAULT_CONFIG_PATH
+    """Settings from panel.toml's [mqtt], then the environment, then explicit
+    overrides (parsed CLI flags; None values are skipped, so an unset flag
+    never clobbers a lower layer). Raises ConfigError naming the file."""
+    cfg_path = path or config_path()
+    table: Any = {}
     if cfg_path.is_file():
-        with cfg_path.open("rb") as fh:
-            data = tomllib.load(fh)
-        for section_name, section_cls in _SECTIONS.items():
-            if section_name not in data:
-                continue
-            block = data[section_name]
-            known = {f.name for f in section_cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
-            unknown = set(block) - known
-            if unknown:
-                raise ValueError(
-                    f"{cfg_path}: unknown key(s) in [{section_name}]: "
-                    f"{', '.join(sorted(unknown))}"
-                )
-            current = getattr(settings, section_name)
-            settings = replace(
-                settings, **{section_name: replace(current, **block)}
-            )
-        if "log_level" in data:
-            settings = replace(settings, log_level=data["log_level"])
+        try:
+            data = tomllib.loads(cfg_path.read_text(encoding="utf-8"))
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
+            raise ConfigError(f"{cfg_path}: {exc}") from None
+        table = data.get("mqtt", {})
+    try:
+        settings = validate(table)
+    except ConfigError as exc:
+        raise ConfigError(f"{cfg_path}: {exc}") from None
 
-    # --- environment ---
     for suffix, (section_name, field_name) in _ENV_MAP.items():
         raw = os.environ.get(ENV_PREFIX + suffix)
         if raw is None:
             continue
         if section_name is None:
-            settings = replace(settings, **{field_name: raw})
+            settings = replace(settings, **{field_name: raw.upper()})
             continue
         current = getattr(settings, section_name)
-        value = _coerce(_field_type(type(current), field_name), raw)
-        settings = replace(
-            settings, **{section_name: replace(current, **{field_name: value})}
-        )
+        settings = replace(settings, **{section_name: replace(
+            current, **{field_name: _coerce(field_name, raw)})})
 
-    # --- CLI ---
     for dotted, value in (overrides or {}).items():
         if value is None:
             continue
@@ -156,8 +227,5 @@ def load(path: Path | None = None, overrides: dict[str, Any] | None = None) -> S
             settings = replace(settings, **{section_name: value})
             continue
         current = getattr(settings, section_name)
-        settings = replace(
-            settings, **{section_name: replace(current, **{field_name: value})}
-        )
-
+        settings = replace(settings, **{section_name: replace(current, **{field_name: value})})
     return settings

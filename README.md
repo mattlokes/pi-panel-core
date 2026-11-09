@@ -23,7 +23,9 @@ installed with `pi-panel-pkg`.
         └─── RegisterSlot/Switch/Subscribe ─┤
                                             ├──▶ pi-panel-app@immich.service     (apps: on screen)
   CLI, TUIs, plugins, apps ──Varlink──▶ ctl ├──▶ pi-panel-app@clock.service
-     io.pipanel.Ctl                         └──▶ pi-panel-plugin@mqtt.service    (plugins: helpers)
+     io.pipanel.Ctl                         ├──▶ pi-panel-plugin@<name>.service  (plugins: helpers)
+                                            └──▶ pi-panel-mqtt.service           (MQTT / Home Assistant,
+                                                                                  from panel.toml [mqtt])
 ```
 
 - **systemd owns every process.** Everything runs in `pi-panel.slice` and is `PartOf=pi-panel.target`. The compositor takes over tty1 through a logind session of its own, and ctl starts apps and plugins as instances of two generic templates.

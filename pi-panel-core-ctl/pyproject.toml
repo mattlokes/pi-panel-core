@@ -4,6 +4,8 @@
 #                      every pi-panel component (ctl, pluginman, plugins, apps)
 #   pi-panel-tui-kit   Textual building blocks shared by the ctl and pluginman TUIs
 #   pi-panel-ctl       the central control daemon (pi-panel-ctld) and its CLI/TUI
+#   pi-panel-mqtt      the MQTT / Home Assistant bridge (pi-panel-mqtt.service),
+#                      configured by [mqtt] in panel.toml
 
 [tool.uv.workspace]
 members = ["packages/*"]

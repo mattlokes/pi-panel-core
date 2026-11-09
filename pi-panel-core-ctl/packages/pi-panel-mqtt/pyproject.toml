@@ -1,7 +1,7 @@
 [project]
-name = "pi-panel-plugin-mqtt"
-version = "0.2.0"
-description = "pi-panel plugin: bridges io.pipanel.Ctl to MQTT and Home Assistant"
+name = "pi-panel-mqtt"
+version = "0.3.0"
+description = "pi-panel's MQTT bridge: io.pipanel.Ctl to MQTT and Home Assistant"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -16,15 +16,10 @@ dependencies = [
 [project.scripts]
 pi-panel-mqtt = "pi_panel_mqtt.__main__:main"
 
-# Installed by pi-panel-pkg into ~/pi-panel-plugin/mqtt, next to ~/pi-panel-core.
+# A member of pi-panel-core-ctl's workspace: `uv sync --all-packages` there
+# installs it into ctl's venv, and pi-panel-mqtt.service runs it from there.
 [tool.uv.sources]
-pi-panel-varlink = { path = "../../pi-panel-core/pi-panel-core-ctl/packages/pi-panel-varlink" }
-
-[dependency-groups]
-dev = [
-    "pytest>=8",
-    "pytest-asyncio>=0.24",
-]
+pi-panel-varlink = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -33,7 +28,4 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/pi_panel_mqtt"]
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests"]
+# Tests run from the workspace root (its pytest settings apply).

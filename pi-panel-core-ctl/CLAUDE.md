@@ -2,9 +2,10 @@
 
 This is the central daemon of pi-panel (`pi-panel-ctld`), with its CLI and TUI.
 It is also a uv workspace holding the shared libraries used by every other
-pi-panel repo:
+pi-panel repo, and the MQTT bridge:
 - `packages/pi-panel-varlink`
 - `packages/pi-panel-tui-kit`
+- `packages/pi-panel-mqtt`: `pi-panel-mqtt.service`, which ctl runs from panel.toml's `[mqtt]` (`reconcile_core_units`). It has its own CLAUDE.md.
 
 The root [README](../README.md) has the architecture diagram and the install procedure.
 

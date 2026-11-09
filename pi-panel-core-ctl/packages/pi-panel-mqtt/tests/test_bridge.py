@@ -358,3 +358,96 @@ def test_legacy_topics_are_this_devices_old_ones():
     assert "pi-panel/jazz/views" in topics
     assert "homeassistant/select/pi_panel_jazz/active_view/config" in topics
     assert all("jazz" in t for t in topics)
+
+
+# --- clearing per-app retained topics ------------------------------------------
+
+async def test_removed_app_clears_its_actions_topic(rig):
+    bridge, ctl, client, _ = rig
+    await until(lambda: client.last("pi-panel/jazz/app/photos/actions") not in (None, b"[]"))
+    ctl.apps = [a for a in ctl.apps if a["name"] != "photos"]
+    ctl.emit("apps_changed", apps=ctl.apps)
+    await until(lambda: client.last("pi-panel/jazz/app/photos/actions") == b"")
+    assert ("pi-panel/jazz/app/photos/actions", b"", True) in client.published
+
+
+async def test_leftovers_from_an_earlier_run_are_cleared(rig):
+    """Retained topics the broker replays at connect: an app removed while the
+    bridge was down, and the old mqtt plugin's own entities, go; topics for
+    apps ctl still has stay."""
+    bridge, ctl, client, _ = rig
+    gone = ["pi-panel/jazz/app/music/actions",
+            "homeassistant/switch/pi_panel_jazz/music_enabled/config",
+            "homeassistant/switch/pi_panel_jazz/mqtt_enabled/config"]
+    kept = "homeassistant/button/pi_panel_jazz/clock_restart/config"
+    other_device = "homeassistant/switch/pi_panel_prime/music_enabled/config"
+    ctl.apps = [a for a in ctl.apps if a["name"] != "mqtt"]   # no longer a package
+    ctl.emit("apps_changed", apps=ctl.apps)
+    await until(lambda: discovery_config(client, "/mqtt_enabled/config") is None)
+    client.published.clear()
+
+    for topic in [*gone, kept]:
+        await bridge.note_retained(topic, b'{"x": 1}')
+    await bridge.note_retained(other_device, b'{"x": 1}')
+
+    for topic in gone:
+        assert (topic, b"", True) in client.published
+    assert all(t != kept or p != b"" for t, p, _ in client.published)
+    assert other_device not in client.topics()
+
+
+async def test_leftovers_wait_for_ctl(tmp_path):
+    """Before ctl has said what exists, nothing is cleared."""
+    bridge = Bridge(Settings(mqtt=MqttSettings(device_id="jazz")),
+                    ctl_address=str(tmp_path / "no-ctl"))
+    client = RecordingClient()
+    bridge.client = client
+    await bridge.note_retained("pi-panel/jazz/app/photos/actions", b"[]")
+    assert ("pi-panel/jazz/app/photos/actions", b"", True) not in client.published
+    assert bridge.managed_wildcards() == ["pi-panel/jazz/app/+/actions",
+                                          "homeassistant/+/pi_panel_jazz/+/config"]
+
+
+def test_managed_topics_are_this_devices_per_app_ones():
+    bridge = Bridge(Settings(mqtt=MqttSettings(device_id="jazz")), ctl_address="/nonexistent")
+    assert bridge.is_managed("pi-panel/jazz/app/x/actions")
+    assert bridge.is_managed("homeassistant/button/pi_panel_jazz/x_restart/config")
+    assert not bridge.is_managed("homeassistant/button/pi_panel_prime/x_restart/config")
+    assert not bridge.is_managed("pi-panel/jazz/state")
+    assert not bridge.is_managed("pi-panel/jazz/command/app/x/action/next")
+
+
+class FakeMessage:
+    def __init__(self, topic: str, payload: bytes, retain: bool) -> None:
+        self.topic, self.payload, self.retain = topic, payload, retain
+
+
+class FakeBroker(RecordingClient):
+    """Enough of aiomqtt.Client for Bridge.session: subscriptions, and the
+    messages the broker delivers (retained replays first)."""
+
+    def __init__(self, messages: list[FakeMessage]) -> None:
+        super().__init__()
+        self.subscriptions: list[str] = []
+        self._messages = messages
+
+    async def subscribe(self, topic, qos=0):
+        self.subscriptions.append(topic)
+
+    @property
+    async def messages(self):
+        for m in self._messages:
+            yield m
+
+
+async def test_session_subscribes_and_routes_replayed_leftovers(rig):
+    bridge, ctl, client, _ = rig
+    broker = FakeBroker([
+        FakeMessage("pi-panel/jazz/app/music/actions", b"[]", retain=True),     # leftover
+        FakeMessage("pi-panel/jazz/command/next", b"", retain=False),           # a command
+    ])
+    await bridge.session(broker)
+    assert broker.subscriptions == ["pi-panel/jazz/command/#", "pi-panel/jazz/app/+/actions",
+                                    "homeassistant/+/pi_panel_jazz/+/config"]
+    assert ("pi-panel/jazz/app/music/actions", b"", True) in broker.published
+    assert ("Next", {}) in ctl.calls

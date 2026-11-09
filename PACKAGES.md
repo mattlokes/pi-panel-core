@@ -54,6 +54,8 @@ The compositor needs no fonts. Its clock font is in
   ```
   The unit files run from these paths: `build/` and the two `.venv`s. Neither can be moved after building: the venvs have absolute shebangs, and meson bakes the clock font's path.
 
+- **The MQTT bridge** (`pi-panel-core-ctl/packages/pi-panel-mqtt`) needs nothing from apt: aiomqtt and paho-mqtt come from PyPI through ctl's `uv.lock`, into ctl's venv. It was the separate plugin `pi-panel-plugin-mqtt` until plan 2; that measured no apt packages either.
+
 ## System setup (`deploy/install.sh`)
 
 All of this happens in `install.sh`, so an image can just run it in the chroot:
@@ -62,7 +64,7 @@ All of this happens in `install.sh`, so an image can just run it in the chroot:
 - creates `/persistent/pi-panel/{config,state}`, owned by `pi`
 - writes no compositor.env: `pi-panel-core-compositor/deploy/start` picks the renderer at each start (pixman on Pis without a GPU MMU); overrides go in `/persistent/pi-panel/config/compositor.env`
 - runs `loginctl enable-linger pi`. In a chroot without logind, create `/var/lib/systemd/linger/pi` instead.
-- `systemctl set-default multi-user.target`, then enables `pi-panel.target`, `pi-panel-compositor` and `pi-panel-ctl`
+- `systemctl set-default multi-user.target`, then enables `pi-panel.target`, `pi-panel-compositor` and `pi-panel-ctl`. `pi-panel-mqtt.service` is installed but not enabled: ctl starts it from `[mqtt]` in panel.toml
 
 ## Already in Lite, and needed
 

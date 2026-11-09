@@ -51,6 +51,7 @@ need() {
 need "$COMPOSITOR/build/pi-panel-compositor" "build the compositor: meson setup build && ninja -C build"
 need "$COMPOSITOR/deploy/start"               "pull the latest pi-panel-core"
 need "$CTL/.venv/bin/pi-panel-ctld"            "in $CTL: uv sync --frozen --compile-bytecode --all-packages"
+need "$CTL/.venv/bin/pi-panel-mqtt"            "in $CTL: uv sync --frozen --compile-bytecode --all-packages"
 need "$PLUGINMAN/.venv/bin/pi-panel-run"       "in $PLUGINMAN: uv sync --frozen --compile-bytecode"
 
 # The unit files hard-code the layout and User=pi.
@@ -71,6 +72,7 @@ for f in \
     "$CORE/deploy/systemd/pi-panel.target" \
     "$CORE/deploy/systemd/pi-panel.slice" \
     "$CTL/deploy/systemd/pi-panel-ctl.service" \
+    "$CTL/deploy/systemd/pi-panel-mqtt.service" \
     "$COMPOSITOR/deploy/systemd/pi-panel-compositor.service" \
     "$PLUGINMAN/deploy/systemd/pi-panel-app@.service" \
     "$PLUGINMAN/deploy/systemd/pi-panel-plugin@.service"

@@ -41,7 +41,7 @@ Varlink interface on `$PI_PANEL_APP_SOCKET`. The interface has three methods:
 | Method | Called by | Use it to |
 |---|---|---|
 | `SetVisible(visible)` | pi-panel-ctl, whenever the app is shown or hidden (including when the display turns off) | stop expensive work (animation, polling) while hidden |
-| `ListActions()` | clients such as the MQTT plugin, which turns each action into a Home Assistant button | list the actions you support (`name` and `label`) |
+| `ListActions()` | clients such as the MQTT bridge, which turns each action into a Home Assistant button | list the actions you support (`name` and `label`) |
 | `InvokeAction(name)` | `pi-panel-ctl action <app> <name>`, Home Assistant | do the action |
 
 From Python, `pi_panel_varlink.AppService` does all of this on a background

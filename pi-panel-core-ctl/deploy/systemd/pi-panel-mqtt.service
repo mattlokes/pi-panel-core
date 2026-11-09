@@ -1,0 +1,33 @@
+[Unit]
+Description=pi-panel MQTT / Home Assistant bridge
+Documentation=file:/opt/pi-panel/pi-panel-core/pi-panel-core-ctl/packages/pi-panel-mqtt/README.md
+PartOf=pi-panel.target
+# A client of pi-panel-ctl, and it reconnects if ctl or the broker restarts;
+# so After=, not BindsTo=.
+After=pi-panel-ctl.service network-online.target
+Wants=network-online.target
+# Started, stopped and restarted by pi-panel-ctl from panel.toml's [mqtt]
+# table, never by a WantedBy= of its own (no [Install]).
+
+[Service]
+Type=exec
+User=pi
+Group=pi
+Slice=pi-panel.slice
+SyslogIdentifier=pi-panel-mqtt
+Environment=PYTHONUNBUFFERED=1
+# Optional: keep the broker password out of panel.toml with a drop-in
+# (systemctl edit pi-panel-mqtt) setting PI_PANEL_MQTT_PASSWORD.
+
+# Installed into ctl's venv by `uv sync --all-packages`. Reads [mqtt] from
+# /persistent/pi-panel/config/panel.toml.
+ExecStart=/opt/pi-panel/pi-panel-core/pi-panel-core-ctl/.venv/bin/pi-panel-mqtt
+
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectControlGroups=yes

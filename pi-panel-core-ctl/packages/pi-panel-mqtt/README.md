@@ -1,11 +1,11 @@
-# pi-panel-plugin-mqtt
+# pi-panel-mqtt
 
-A pi-panel plugin that puts the panel on MQTT, with
+The core's MQTT bridge: it puts the panel on MQTT, with
 [Home Assistant discovery](https://www.home-assistant.io/integrations/mqtt/#mqtt-discovery).
 
 ```
 pi-panel-ctl ──Varlink (Subscribe)──▶ pi-panel-mqtt ──MQTT──▶ broker ──▶ Home Assistant
-             ◀──Varlink calls──────── (plugin)      ◀──commands──
+             ◀──Varlink calls────────               ◀──commands──
 apps' io.pipanel.App ◀── action buttons
 ```
 
@@ -13,17 +13,36 @@ It talks only to `io.pipanel.Ctl`, never to the compositor. Nothing is polled:
 state arrives through ctl's `Subscribe`, and MQTT gets a retained message only
 when something actually changes.
 
-## Install
+## Turning it on
 
-```bash
-pi-panel-pkg install https://github.com/mattlokes/pi-panel-plugin-mqtt.git
-$EDITOR ~/.config/pi-panel/plugins/mqtt/mqtt.toml      # broker host etc.
-pi-panel-ctl enable mqtt
-journalctl -u pi-panel-plugin@mqtt -f
+It is part of pi-panel-core (it used to be the separate plugin
+`pi-panel-plugin-mqtt`). `uv sync --all-packages` in `pi-panel-core-ctl`
+installs it into ctl's venv, and it runs as `pi-panel-mqtt.service`, which
+**pi-panel-ctl starts and stops** from the `[mqtt]` table of `panel.toml`:
+
+```toml
+[mqtt]
+enabled = true
+host = "mqtt.home.local"
+
+[mqtt.homeassistant]
+enabled = true
 ```
 
-Put a broker password in the environment rather than in the file: add
-`PI_PANEL_MQTT_PASSWORD=...` to a drop-in for `pi-panel-plugin@mqtt.service`.
+```bash
+$EDITOR /persistent/pi-panel/config/panel.toml
+pi-panel-ctl reload                    # checks [mqtt]; a bad key is refused
+journalctl -u pi-panel-mqtt -f
+```
+
+ctl restarts the bridge whenever the `[mqtt]` table changes, and stops it for
+`enabled = false` or no table at all. Every key, with its default, is in
+[`src/pi_panel_mqtt/config.py`](src/pi_panel_mqtt/config.py) and in
+[`panel.toml.example`](../../panel.toml.example). `PI_PANEL_MQTT_*` environment
+variables and command-line flags still override the file.
+
+To keep a broker password out of `panel.toml`, put `PI_PANEL_MQTT_PASSWORD=...`
+in a drop-in: `systemctl edit pi-panel-mqtt`.
 
 ## Topics
 
@@ -76,7 +95,7 @@ every broker reconnect.
 
 ## Home Assistant
 
-With `[homeassistant] enabled = true`, the panel shows up as a device,
+With `[mqtt.homeassistant] enabled = true`, the panel shows up as a device,
 *Pi Panel (jazz)*, with:
 
 - a **Showing** select, and a *Showing because* sensor. Choosing an app switches to it at once, over an app's own hold such as music playing (`command/switch`); timed holds, such as a doorbell's, still win
@@ -92,20 +111,22 @@ Every app and plugin is a device of its own, connected via the panel
 - a button for each of the app's actions, e.g. *Next photo*
 
 The entity set follows the panel's contents. When an app or action goes away,
-its entities are removed by publishing an empty retained config, and Home
-Assistant drops a package's device with its last entity. Entity ids don't
+its entities and its `app/<name>/actions` topic are removed by publishing an
+empty retained payload, and Home Assistant drops a package's device with its
+last entity. That also covers what went away while the bridge was down: at
+connect it subscribes to this device's per-app topics, and clears what the
+broker replays that ctl no longer has (for example the old mqtt plugin's own
+*Enabled*/*Restart* entities). Entity ids don't
 depend on the device, so moving entities between devices keeps them.
 
 There is deliberately no control that stops the compositor.
 
 ## Development
 
-```bash
-uv sync
-uv run pytest            # a fake io.pipanel.Ctl over real Varlink; no broker, no Pi
-uv run --with aiomqtt scripts/mqtt-tap.py sub 'pi-panel/#'
-```
+From `pi-panel-core-ctl` (the workspace root):
 
-`pi-panel-varlink` comes from `../../pi-panel-core/pi-panel-core-ctl` by
-relative path. That path also works once the plugin is installed to
-`~/pi-panel-plugin/mqtt`.
+```bash
+uv sync --all-packages
+uv run pytest packages/pi-panel-mqtt     # a fake io.pipanel.Ctl over real Varlink; no broker, no Pi
+uv run --with aiomqtt packages/pi-panel-mqtt/scripts/mqtt-tap.py sub 'pi-panel/#'
+```

@@ -48,6 +48,8 @@ log = logging.getLogger("pi-panel-ctl")
 
 IFACE = "io.pipanel.Ctl"
 VERSION = "0.1.0"
+MQTT_UNIT = "pi-panel-mqtt.service"
+RUNNING = ("active", "activating", "reloading")
 APP_CALL_TIMEOUT = 2.0
 
 
@@ -88,6 +90,7 @@ class Ctl:
         self._visible: dict[str, bool] = {}          # last SetVisible sent per app
         self._interfaces: dict[str, list[str]] = {}  # app -> interfaces from GetInfo
         self._clock_refused: dict[str, Any] | None = None  # not resent until it changes
+        self._mqtt_applied: dict[str, Any] | None = None   # [mqtt] the bridge was started with
         self._tasks: set[asyncio.Task[Any]] = set()
         self.server: Server | None = None
 
@@ -159,13 +162,13 @@ class Ctl:
             if pkg.name in self.config.enabled:
                 if pkg.kind == "app":
                     await self.compositor.register(pkg.name, match_unit=unit)
-                if state not in ("active", "activating", "reloading"):
+                if state not in RUNNING:
                     try:
                         await self.units.start(unit)
                     except UnitError as exc:
                         log.error("cannot start %s: %s", unit, exc.message)
             else:
-                if state in ("active", "activating", "reloading"):
+                if state in RUNNING:
                     with contextlib.suppress(UnitError):
                         await self.units.stop(unit)
                 if pkg.kind == "app":
@@ -174,7 +177,30 @@ class Ctl:
         for name in self.compositor.wanted() - set(self.packages):
             await self.compositor.unregister(name)   # uninstalled
         self._sync_rotations()
+        await self.reconcile_core_units()
         self.kick()
+
+    async def reconcile_core_units(self) -> None:
+        """The core's optional units, driven by panel.toml rather than by
+        packages: pi-panel-mqtt.service runs while [mqtt] enabled = true, and is
+        restarted when the [mqtt] table changes (it reads it only at start)."""
+        want = self.config.mqtt_enabled()
+        running = await self.units.watch(MQTT_UNIT) in RUNNING
+        try:
+            if not want:
+                if running:
+                    log.info("[mqtt] off: stopping %s", MQTT_UNIT)
+                    await self.units.stop(MQTT_UNIT)
+                self._mqtt_applied = None
+                return
+            if not running:
+                await self.units.start(MQTT_UNIT)
+            elif self._mqtt_applied is not None and self._mqtt_applied != self.config.mqtt:
+                log.info("[mqtt] changed: restarting %s", MQTT_UNIT)
+                await self.units.restart(MQTT_UNIT)
+            self._mqtt_applied = self.config.mqtt
+        except UnitError as exc:
+            log.error("cannot control %s: %s", MQTT_UNIT, exc.message)
 
     # --- views of the state ------------------------------------------------
 

@@ -1,4 +1,5 @@
-"""pi-panel-mqtt: entry point (run by pi-panel-plugin@mqtt.service)."""
+"""pi-panel-mqtt: entry point (pi-panel-mqtt.service, started by pi-panel-ctl while
+panel.toml has [mqtt] with enabled = true)."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import sys
 from pathlib import Path
 
 from .bridge import Bridge
-from .config import DEFAULT_CONFIG_PATH, load
+from .config import ConfigError, config_path, load
 
 log = logging.getLogger("pi-panel-mqtt")
 
@@ -19,7 +20,8 @@ log = logging.getLogger("pi-panel-mqtt")
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pi-panel-mqtt",
                                 description="Bridge pi-panel-ctl to MQTT and Home Assistant.")
-    p.add_argument("--config", type=Path, default=None, help=f"default: {DEFAULT_CONFIG_PATH}")
+    p.add_argument("--config", type=Path, default=None,
+                   help=f"panel.toml to read [mqtt] from (default: {config_path()})")
     p.add_argument("--host", default=None, help="MQTT broker host")
     p.add_argument("--port", type=int, default=None)
     p.add_argument("--username", default=None)
@@ -42,7 +44,7 @@ def _overrides(args: argparse.Namespace) -> dict:
         "mqtt.device_id": args.device_id,
         "mqtt.base_topic": args.base_topic,
         "ctl.socket_path": args.ctl_socket,
-        "log_level": args.log_level,
+        "log_level": args.log_level.upper() if args.log_level else None,
     }
     if args.no_discovery:
         ov["homeassistant.enabled"] = False
@@ -67,9 +69,12 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         settings = load(args.config, _overrides(args))
-    except (ValueError, OSError) as exc:
+    except (ConfigError, OSError) as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
+    if not settings.enabled:
+        print("[mqtt] enabled = false: nothing to do", file=sys.stderr)
+        return 0
     # The journal adds its own timestamps; only include them on a terminal.
     fmt = "%(asctime)s %(levelname)-7s %(message)s" if sys.stderr.isatty() else "%(levelname)-7s %(message)s"
     logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO),
