@@ -111,7 +111,7 @@ sudo /opt/pi-panel/pi-panel-core/deploy/install.sh && sudo systemctl restart pi-
 
 The migration turns ctl.toml into panel.toml, folds the MQTT plugin's
 mqtt.toml into `[mqtt]`, copies each app's config, reinstalls the apps as
-image packages under `/opt/pi-panel` from their repos, converts immich's
+image packages under `/opt/pi-panel` from their GitHub mirrors, converts immich's
 config.yaml, and runs `pi-panel-ctl config check`. To go back, run the old
 `~/pi-panel-core/deploy/install.sh` and restart.
 

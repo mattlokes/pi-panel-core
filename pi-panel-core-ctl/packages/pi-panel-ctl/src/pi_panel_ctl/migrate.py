@@ -18,7 +18,8 @@ step, which it prints).
    Everything is validated (ctl's and the bridge's own checks) before a file
    is written.
 2. the apps: each installed app is reinstalled with `pi-panel-pkg install
-   --image` from its Forgejo repo, which builds it in place under /opt.
+   --image` from its GitHub mirror (what panels install from: they may not
+   reach Forgejo), which builds it in place under /opt.
 3. immich's config.yaml becomes config.toml (the app's own --convert-yaml).
 4. `pi-panel-ctl config check`.
 """
@@ -44,12 +45,14 @@ from . import paths
 from .config import CtlConfig
 from .model import ValidationError
 
-FORGEJO = "https://forgejo.matts-homelab.com/matt"
-# Package name -> repo, for the apps that ship with the panel.
+# Package name -> repo, for the apps that ship with the panel. The public
+# GitHub mirrors, not Forgejo: panels install from GitHub (jazz, on the
+# 192.168.4 LAN, cannot reach the 10.x network Forgejo lives on).
+GITHUB = "https://github.com/mattlokes"
 REPOS = {
-    "immich": f"{FORGEJO}/pi-panel-immich.git",
-    "now-playing": f"{FORGEJO}/pi-panel-now-playing.git",
-    "webrtc-client": f"{FORGEJO}/pi-panel-webrtc-client.git",
+    "immich": f"{GITHUB}/pi-panel-immich.git",
+    "now-playing": f"{GITHUB}/pi-panel-now-playing.git",
+    "webrtc-client": f"{GITHUB}/pi-panel-webrtc-client.git",
 }
 OLD_MQTT_KEYS = {"host", "port", "username", "password", "base_topic", "device_id",
                  "keepalive", "tls"}
