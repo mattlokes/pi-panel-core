@@ -15,8 +15,9 @@ pi-panel-pkg = "pi_panel_pluginman.cli:main"
 pi-panel-run = "pi_panel_pluginman.run:main"
 
 # The shared libraries live in pi-panel-core-ctl's workspace. Every pi-panel
-# repo sits in the same layout (~/pi-panel-core, ~/pi-panel-apps,
-# ~/pi-panel-plugin), so a relative path works on the Pi and in development.
+# repo sits in the same layout (/opt/pi-panel/{pi-panel-core,pi-panel-apps,
+# pi-panel-plugin} on the Pi, siblings in development), so a relative path
+# works in both.
 [tool.uv.sources]
 pi-panel-varlink = { path = "../pi-panel-core-ctl/packages/pi-panel-varlink" }
 pi-panel-tui-kit = { path = "../pi-panel-core-ctl/packages/pi-panel-tui-kit" }

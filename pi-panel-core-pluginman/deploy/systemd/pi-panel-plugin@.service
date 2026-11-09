@@ -1,6 +1,6 @@
 [Unit]
 Description=pi-panel plugin %i
-Documentation=file:/home/pi/pi-panel-core/pi-panel-core-pluginman/README.md
+Documentation=file:/opt/pi-panel/pi-panel-core/pi-panel-core-pluginman/README.md
 PartOf=pi-panel.target
 # Plugins talk to pi-panel-ctl, not the compositor, and are expected to
 # reconnect if ctl restarts; so After=, not BindsTo=.
@@ -16,7 +16,7 @@ Slice=pi-panel.slice
 SyslogIdentifier=pi-panel-plugin-%i
 Environment=PYTHONUNBUFFERED=1
 
-ExecStart=/home/pi/pi-panel-core/pi-panel-core-pluginman/.venv/bin/pi-panel-run plugin %i
+ExecStart=/opt/pi-panel/pi-panel-core/pi-panel-core-pluginman/.venv/bin/pi-panel-run plugin %i
 
 Restart=on-failure
 RestartSec=5

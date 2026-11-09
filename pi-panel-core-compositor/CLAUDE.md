@@ -11,8 +11,8 @@ The compositor builds only on `pi@jazz` (Raspberry Pi 5, trixie, arm64). The dev
 machine has no wlroots or meson. Sync and build like this:
 
 ```bash
-rsync -a --delete --exclude .git --exclude build ./ pi@jazz:~/pi-panel-core/pi-panel-core-compositor/
-ssh pi@jazz 'cd ~/pi-panel-core/pi-panel-core-compositor && ninja -C build 2>&1 | tail -5'
+rsync -a --delete --exclude .git --exclude build ./ pi@jazz:/opt/pi-panel/pi-panel-core/pi-panel-core-compositor/
+ssh pi@jazz 'cd /opt/pi-panel/pi-panel-core/pi-panel-core-compositor && ninja -C build 2>&1 | tail -5'
 ```
 
 The general jazz notes are in the root [CLAUDE.md](../CLAUDE.md).

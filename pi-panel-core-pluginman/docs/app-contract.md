@@ -62,7 +62,7 @@ You can serve more interfaces of your own on the same socket, e.g.
 
 ## Depending on pi-panel-varlink
 
-Installed apps live in `~/pi-panel-apps/<name>/`, next to `~/pi-panel-core/`,
+Installed apps live in `/opt/pi-panel/pi-panel-apps/<name>/`, next to `/opt/pi-panel/pi-panel-core/`,
 so a relative path source works everywhere:
 
 ```toml

@@ -1,11 +1,14 @@
-"""Where pi-panel keeps things. The same layout is used by pluginman.
+"""Where pi-panel keeps things. pluginman's paths.py uses the same defaults
+(a test in this package checks that they agree).
 
-Each root can be moved with an environment variable, which is how development
-and the tests run a complete panel as an unprivileged user:
+    PI_PANEL_CONFIG_HOME   /persistent/pi-panel/config   panel.toml, per-package config
+    PI_PANEL_DATA_HOME     /persistent/pi-panel/state    the state registry, extra packages
+    PI_PANEL_RUNTIME_DIR   /run/pi-panel                 Varlink sockets
 
-    PI_PANEL_CONFIG_HOME   ~/.config/pi-panel          ctl.toml, per-package config
-    PI_PANEL_DATA_HOME     ~/.local/share/pi-panel     installed packages + registry
-    PI_PANEL_RUNTIME_DIR   /run/pi-panel               Varlink sockets
+The defaults are the panel's real layout, so a CLI run over SSH (which never
+sees a unit's Environment=) finds the same files as the units. Each root can
+be moved with its environment variable, which is how development and the
+tests run a complete panel as an unprivileged user.
 
 (Deliberately not PI_PANEL_CONFIG_DIR: pi-panel-run gives each package that
 variable, pointing at the package's *own* config directory.)
@@ -17,16 +20,21 @@ import os
 from pathlib import Path
 
 
+CONFIG_HOME = "/persistent/pi-panel/config"
+DATA_HOME = "/persistent/pi-panel/state"
+RUNTIME_DIR = "/run/pi-panel"
+
+
 def config_home() -> Path:
-    return Path(os.environ.get("PI_PANEL_CONFIG_HOME") or Path.home() / ".config" / "pi-panel")
+    return Path(os.environ.get("PI_PANEL_CONFIG_HOME") or CONFIG_HOME)
 
 
 def data_home() -> Path:
-    return Path(os.environ.get("PI_PANEL_DATA_HOME") or Path.home() / ".local" / "share" / "pi-panel")
+    return Path(os.environ.get("PI_PANEL_DATA_HOME") or DATA_HOME)
 
 
 def runtime_dir() -> Path:
-    return Path(os.environ.get("PI_PANEL_RUNTIME_DIR") or "/run/pi-panel")
+    return Path(os.environ.get("PI_PANEL_RUNTIME_DIR") or RUNTIME_DIR)
 
 
 def ctl_config() -> Path:

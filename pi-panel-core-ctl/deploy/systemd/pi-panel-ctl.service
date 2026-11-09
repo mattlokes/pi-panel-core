@@ -1,6 +1,6 @@
 [Unit]
 Description=pi-panel control daemon
-Documentation=file:/home/pi/pi-panel-core/README.md
+Documentation=file:/opt/pi-panel/pi-panel-core/README.md
 PartOf=pi-panel.target
 # Wants, not BindsTo: ctl outlives a compositor crash, reports it offline, and
 # re-registers every slot when it comes back.
@@ -19,7 +19,7 @@ SyslogIdentifier=pi-panel-ctl
 # The venv's console script, not `uv run`: the Pi boots from a USB stick that
 # reads ~3 MB/s cold. After a dependency change run
 # `uv sync --frozen --compile-bytecode --all-packages` in the repo.
-ExecStart=/home/pi/pi-panel-core/pi-panel-core-ctl/.venv/bin/pi-panel-ctld
+ExecStart=/opt/pi-panel/pi-panel-core/pi-panel-core-ctl/.venv/bin/pi-panel-ctld
 
 Restart=on-failure
 RestartSec=2

@@ -67,7 +67,7 @@ varlinkctl introspect /run/pi-panel/ctl/io.pipanel.Ctl io.pipanel.Ctl
 varlinkctl call --more /run/pi-panel/ctl/io.pipanel.Ctl io.pipanel.Ctl.Subscribe '{}'
 ```
 
-Configuration lives in `~/.config/pi-panel/ctl.toml`, which covers enabled
+Configuration lives in `/persistent/pi-panel/config/ctl.toml`, which covers enabled
 packages, rotations, schedules, the transition style and the clock overlay. ctl writes changes
 made through the API back to this file.
 
@@ -88,7 +88,7 @@ user units:
 
 ```bash
 systemd-run --user --unit pp-comp -E WLR_BACKENDS=headless -E WLR_RENDERER=pixman \
-    ~/pi-panel-core/pi-panel-core-compositor/build/pi-panel-compositor \
+    /opt/pi-panel/pi-panel-core/pi-panel-core-compositor/build/pi-panel-compositor \
     --ipc-socket /tmp/pp/c --wayland-socket pp-0
 pi-panel-ctld --user-units --compositor-socket /tmp/pp/c --socket /tmp/pp/ctl
 ```

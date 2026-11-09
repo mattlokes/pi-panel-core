@@ -1,6 +1,6 @@
 [Unit]
 Description=pi-panel kiosk compositor
-Documentation=file:/home/pi/pi-panel-core/pi-panel-core-compositor/README.md
+Documentation=file:/opt/pi-panel/pi-panel-core/pi-panel-core-compositor/README.md
 PartOf=pi-panel.target
 # The compositor takes over tty1 and needs its logind seat for DRM, so it runs
 # in a PAM session of its own (the pattern cage documents for kiosks).
@@ -29,18 +29,24 @@ UtmpMode=user
 Environment=XDG_SESSION_TYPE=wayland XDG_SESSION_CLASS=user
 Slice=pi-panel.slice
 
-# Written by install.sh: WLR_RENDERER=pixman on Pis without a GPU MMU.
-# Edit it to force a renderer or a DRM device (WLR_DRM_DEVICES=...).
-EnvironmentFile=-/etc/pi-panel/compositor.env
-
 # /run/pi-panel/compositor holds the Varlink socket. Only this leaf is removed
 # when the compositor stops, not the other components' directories.
 RuntimeDirectory=pi-panel/compositor
 RuntimeDirectoryMode=0750
 
+# Optional overrides (WLR_RENDERER, WLR_DRM_DEVICES, WLR_NO_HARDWARE_CURSORS...),
+# later files winning. compositor.env in the config directory is the place for
+# them; /etc/pi-panel/compositor.env is the old place, still honoured. Without
+# a WLR_RENDERER here, deploy/start picks one for the board (pixman on Pis
+# without a GPU MMU).
+EnvironmentFile=-/etc/pi-panel/compositor.env
+EnvironmentFile=-/persistent/pi-panel/config/compositor.env
+
 # Points into the build directory on purpose: the development loop is just
-# `ninja -C build && systemctl restart pi-panel-compositor`.
-ExecStart=/home/pi/pi-panel-core/pi-panel-core-compositor/build/pi-panel-compositor \
+# `ninja -C build && systemctl restart pi-panel-compositor`. Build it in place
+# here: meson bakes the clock font's absolute path (fonts/ beside build/).
+ExecStart=/opt/pi-panel/pi-panel-core/pi-panel-core-compositor/deploy/start \
+          /opt/pi-panel/pi-panel-core/pi-panel-core-compositor/build/pi-panel-compositor \
           --ipc-socket /run/pi-panel/compositor/io.pipanel.Compositor \
           --wayland-socket pi-panel-0
 

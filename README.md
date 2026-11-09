@@ -29,7 +29,8 @@ installed with `pi-panel-pkg`.
 - **systemd owns every process.** Everything runs in `pi-panel.slice` and is `PartOf=pi-panel.target`. The compositor takes over tty1 through a logind session of its own, and ctl starts apps and plugins as instances of two generic templates.
 - **Everything speaks [Varlink](https://varlink.org)**: JSON over a Unix socket, with interfaces you can introspect. `varlinkctl` works against every pi-panel socket.
 - **Nothing polls.** The compositor streams window events, systemd streams unit states, and ctl streams its own state to the CLI, the TUIs and plugins.
-- **Apps and plugins live next to the core:** `~/pi-panel-apps/<name>` and `~/pi-panel-plugin/<name>`, installed by `pi-panel-pkg` without root.
+- **Apps and plugins live next to the core:** `/opt/pi-panel/pi-panel-apps/<name>` and `/opt/pi-panel/pi-panel-plugin/<name>`, installed by `pi-panel-pkg` without root.
+- **Code, config and state are separate:** code in `/opt/pi-panel`, config in `/persistent/pi-panel/config`, the package registry in `/persistent/pi-panel/state`.
 
 ## Installing a panel
 
@@ -42,7 +43,9 @@ sudo apt install --no-install-recommends git \
                  libxkbcommon-dev libpixman-1-dev libdrm-dev meson ninja-build pkg-config
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-git clone https://github.com/mattlokes/pi-panel-core.git ~/pi-panel-core && cd ~/pi-panel-core
+sudo install -d -o pi -g pi /opt/pi-panel
+git clone https://github.com/mattlokes/pi-panel-core.git /opt/pi-panel/pi-panel-core
+cd /opt/pi-panel/pi-panel-core
 (cd pi-panel-core-compositor && meson setup build && ninja -C build)
 (cd pi-panel-core-ctl       && uv sync --frozen --compile-bytecode --all-packages)
 (cd pi-panel-core-pluginman && uv sync --frozen --compile-bytecode)
@@ -52,6 +55,7 @@ sudo reboot
 
 `deploy/install.sh` does the following:
 - installs the units, the PAM file and the polkit rule
+- creates `/persistent/pi-panel/config` and `/persistent/pi-panel/state`, owned by `pi`
 - links `pi-panel-ctl`, `pi-panel-ctld`, `pi-panel-pkg` and `pi-panel-run` into `/usr/local/bin`
 - enables lingering for `pi`, and enables `pi-panel.target`
 - migrates an old install away from the `~/.bash_profile` / tty1 startup
@@ -84,7 +88,7 @@ password. If the compositor keeps failing, a login prompt comes back on tty1.
 ## Updating
 
 ```bash
-cd ~/pi-panel-core && git pull
+cd /opt/pi-panel/pi-panel-core && git pull
 (cd pi-panel-core-compositor && ninja -C build)
 (cd pi-panel-core-ctl && uv sync --frozen --compile-bytecode --all-packages)
 (cd pi-panel-core-pluginman && uv sync --frozen --compile-bytecode)

@@ -42,7 +42,7 @@ substituted:
 
 | Variable | Value |
 |---|---|
-| `${config_dir}` | the package's config directory, `~/.config/pi-panel/<kind>s/<name>` |
+| `${config_dir}` | the package's config directory, `/persistent/pi-panel/config/<kind>s/<name>` |
 | `${package_dir}` | where the package is installed, which is also the working directory |
 | `${name}` | the package name |
 | `${runtime_dir}` | `/run/pi-panel` |

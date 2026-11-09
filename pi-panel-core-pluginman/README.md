@@ -40,12 +40,15 @@ Wayland window, exit promptly on SIGTERM, and optionally serve
 ## Where things go
 
 ```
-~/pi-panel-core/          the core (see its README)
-~/pi-panel-apps/<name>/   installed apps
-~/pi-panel-plugin/<name>/ installed plugins
-~/.config/pi-panel/apps/<name>/     an app's config (from its templates; kept across updates)
-~/.local/share/pi-panel/packages.json   the registry pi-panel-ctl reads
+/opt/pi-panel/pi-panel-core/            the core (see its README)
+/opt/pi-panel/pi-panel-apps/<name>/     installed apps
+/opt/pi-panel/pi-panel-plugin/<name>/   installed plugins
+/persistent/pi-panel/config/apps/<name>/   an app's config (from its templates; kept across updates)
+/persistent/pi-panel/state/packages.json   the registry pi-panel-ctl reads
 ```
+
+Each root can be moved with `PI_PANEL_HOME`, `PI_PANEL_CONFIG_HOME` and
+`PI_PANEL_DATA_HOME`; the tests and development use that.
 
 Installed packages sit next to the core so that one relative path reaches
 the shared libraries on any machine:

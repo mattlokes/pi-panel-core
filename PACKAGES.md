@@ -46,20 +46,21 @@ The compositor needs no fonts. Its clock font is in
   - `pi-panel-run` puts `~/.local/bin` first on PATH, so apps whose `[run]` calls `uv` (immich) find it under systemd.
   - `pi-panel-pkg` runs package builds with it.
 - **Python** is the system `python3` (3.13). `uv sync` makes the ctl and pluginman venvs from `/usr/bin/python3.13` and downloads no interpreter.
-- **The code** is `git clone https://github.com/mattlokes/pi-panel-core.git ~pi/pi-panel-core`, then build it:
+- **The code** is `git clone https://github.com/mattlokes/pi-panel-core.git /opt/pi-panel/pi-panel-core` (with `/opt/pi-panel` owned by `pi`), then build it in place:
   ```bash
   (cd pi-panel-core-compositor && meson setup build && ninja -C build)
   (cd pi-panel-core-ctl       && uv sync --frozen --compile-bytecode --all-packages)
   (cd pi-panel-core-pluginman && uv sync --frozen --compile-bytecode)
   ```
-  The unit files run from these paths: `build/` and the two `.venv`s.
+  The unit files run from these paths: `build/` and the two `.venv`s. Neither can be moved after building: the venvs have absolute shebangs, and meson bakes the clock font's path.
 
 ## System setup (`deploy/install.sh`)
 
 All of this happens in `install.sh`, so an image can just run it in the chroot:
 - copies the units, `/etc/pam.d/pi-panel` and `/etc/polkit-1/rules.d/50-pi-panel.rules`
 - symlinks `pi-panel-{ctl,ctld,pkg,run}` into `/usr/local/bin`
-- writes `/etc/pi-panel/compositor.env`, which is empty on a Pi 5 (it has a GPU MMU)
+- creates `/persistent/pi-panel/{config,state}`, owned by `pi`
+- writes no compositor.env: `pi-panel-core-compositor/deploy/start` picks the renderer at each start (pixman on Pis without a GPU MMU); overrides go in `/persistent/pi-panel/config/compositor.env`
 - runs `loginctl enable-linger pi`. In a chroot without logind, create `/var/lib/systemd/linger/pi` instead.
 - `systemctl set-default multi-user.target`, then enables `pi-panel.target`, `pi-panel-compositor` and `pi-panel-ctl`
 
@@ -77,6 +78,6 @@ curl ca-certificates    # uv installer, package fetches
 
 ## User
 
-- The user is `pi` (uid 1000) with home `/home/pi`. The unit files, the polkit rule and the relative package paths all assume it.
+- The user is `pi` (uid 1000). The unit files and the polkit rule assume it (plan 4 moves the panel to a system user, `pipanel`).
 - `pi` must be in the `video`, `render` and `input` groups. Lite's default first user already is.
 - On a Lite image flashed without Imager customisation, first boot runs userconf-pi's rename dialog (`userconfig.service` on tty8), and `pi` has a nologin shell. Prime was fixed with `sudo cancel-rename pi && sudo usermod -s /bin/bash pi`. An image recipe that creates `pi` itself never sees this.

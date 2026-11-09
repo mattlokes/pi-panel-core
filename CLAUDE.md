@@ -20,24 +20,29 @@ The target is `pi@jazz` (Raspberry Pi 5, trixie, arm64, uid 1000).
 
 ```bash
 rsync -a --delete --exclude .git --exclude .venv --exclude build --exclude __pycache__ \
-    ./ pi@jazz:~/pi-panel-core/
+    ./ pi@jazz:/opt/pi-panel/pi-panel-core/
 ```
+
+Jazz moves to this layout in plan 2 phase F. Until then it still runs the old
+`~/pi-panel-core` install.
 
 ## Remotes and CI
 
-- **`origin`** is Forgejo: `git@forgejo.internal:matt/<repo>.git`. The web UI is https://forgejo.matts-homelab.com/. The repos are private and are the primary copy. The repos are `pi-panel-core`, `pi-panel-immich`, `pi-panel-now-playing` and `pi-panel-webrtc-client`.
+- **`origin`** is Forgejo: `git@forgejo.internal:matt/<repo>.git`. The web UI is https://forgejo.matts-homelab.com/. The repos are public and are the primary copy. The repos are `pi-panel-core`, `pi-panel-immich`, `pi-panel-now-playing` and `pi-panel-webrtc-client`.
 - **`github`** is `git@github.com:mattlokes/<repo>.git`, public. Forgejo push-mirrors to it on every push. Treat it as read-only and don't push to it directly. Prime and the pluginman `packages.json` sources install from the GitHub URLs.
 - **CI** is `.forgejo/workflows/ci.yml` with `runs-on: arm64`. It runs on **starscream**, a Pi 4 with 1.8 GiB RAM, using the host executor as user `forgejo-runner`. Keep builds at `-j2` or lower. Never put `-march`, `-mcpu` or `native` in build flags: the Pi 4 builds must stay valid on the Pi 5.
 - Don't push unless asked to at that moment.
 
 ## Layout contract (shared by every pi-panel repo)
 
-- **Directory names are load-bearing.** Other repos depend on the shared libraries by the relative path `../../pi-panel-core/pi-panel-core-ctl/packages/...`, and pluginman uses `../pi-panel-core-ctl/packages/...`. Installed packages go to `~/pi-panel-apps/<name>` and `~/pi-panel-plugin/<name>`, next to `~/pi-panel-core`. Unit files hard-code `/home/pi/pi-panel-core/...`. Don't rename directories.
+- **Directory names are load-bearing.** Other repos depend on the shared libraries by the relative path `../../pi-panel-core/pi-panel-core-ctl/packages/...`, and pluginman uses `../pi-panel-core-ctl/packages/...`. Installed packages go to `/opt/pi-panel/pi-panel-apps/<name>` and `/opt/pi-panel/pi-panel-plugin/<name>`, next to `/opt/pi-panel/pi-panel-core`. Unit files hard-code `/opt/pi-panel/pi-panel-core/...`. Don't rename directories.
+- **Built in place.** The venvs have absolute shebangs and meson bakes the clock font's absolute path, so the core and every package are built where they run, never built elsewhere and copied.
 - **Sockets:** `/run/pi-panel/{compositor,ctl,apps/<name>}/`. Each unit owns its own `RuntimeDirectory` leaf.
 - **Files:**
-  - config: `~/.config/pi-panel/ctl.toml`, plus `apps/<name>/` and `plugins/<name>/` for package config
-  - registry: `~/.local/share/pi-panel/packages.json`, written by pluginman and read by ctl
-- **Environment overrides:** `PI_PANEL_{HOME,CONFIG_HOME,DATA_HOME,RUNTIME_DIR}`. `PI_PANEL_CONFIG_DIR` is different: it is a package's *own* config directory, set by `pi-panel-run`.
+  - code: `/opt/pi-panel` (`PI_PANEL_HOME`), read-only once it ships in an image
+  - config: `/persistent/pi-panel/config` (`PI_PANEL_CONFIG_HOME`): `ctl.toml`, `apps/<name>/` and `plugins/<name>/` for package config, and an optional `compositor.env`
+  - state: `/persistent/pi-panel/state` (`PI_PANEL_DATA_HOME`): the registry `packages.json`, written by pluginman and read by ctl, and `staging/`
+- **Environment overrides:** `PI_PANEL_{HOME,CONFIG_HOME,DATA_HOME,RUNTIME_DIR}`. The defaults are the layout above, in both `pi_panel_ctl/paths.py` and `pi_panel_pluginman/paths.py` (a ctl test checks they agree), so CLIs run over SSH find the same files as the units. `PI_PANEL_CONFIG_DIR` is different: it is a package's *own* config directory, set by `pi-panel-run`.
 - **Varlink interfaces:**
   - `io.pipanel.Compositor` is private to ctl.
   - `io.pipanel.Ctl` is the panel's public API.

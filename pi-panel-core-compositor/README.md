@@ -149,4 +149,4 @@ Under systemd, `systemctl stop pi-panel.target` is the way to stop the panel.
 | `WLR_RENDERER` | Force a renderer: `gles2`, `vulkan`, `pixman` |
 | `WLR_NO_HARDWARE_CURSORS=1` | Disable the hardware cursor plane |
 
-For the service, put these in `/etc/pi-panel/compositor.env`.
+For the service, put these in `/persistent/pi-panel/config/compositor.env` (an old `/etc/pi-panel/compositor.env` is still read). Without a `WLR_RENDERER` there, `deploy/start` picks one for the board at each start: `pixman` on Pis without a GPU MMU (before the Pi 5), the wlroots default otherwise.

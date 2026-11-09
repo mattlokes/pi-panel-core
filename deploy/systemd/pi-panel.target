@@ -1,6 +1,6 @@
 [Unit]
 Description=pi-panel smart display
-Documentation=file:/home/pi/pi-panel-core/README.md
+Documentation=file:/opt/pi-panel/pi-panel-core/README.md
 # The group handle: start/stop/restart this to act on the whole panel.
 #   systemctl restart pi-panel.target
 # Members are PartOf= this target, and are pulled in by WantedBy=. App and

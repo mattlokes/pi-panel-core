@@ -1,0 +1,40 @@
+#!/bin/sh
+# ExecStart of pi-panel-compositor.service: pick the renderer, then exec the
+# compositor (same process, so Type=notify and the tty/PAM session carry over).
+#
+#     start <compositor> [args...]
+#
+# Pis without a GPU MMU (everything before the BCM2712 of the Pi 5 family)
+# need wlroots' software renderer, the same choice raspi-config's gpu_has_mmu
+# makes for labwc. Decided at every start from the device tree, so one image
+# runs on a Pi 4 and a Pi 5 alike; no root and no raspi-config needed.
+#
+# A WLR_RENDERER that is already set (from compositor.env, through the unit's
+# EnvironmentFile=) always wins.
+set -eu
+
+compatible=${PI_PANEL_DT_COMPATIBLE:-/proc/device-tree/compatible}   # override: tests
+
+# The file is NUL-separated: "raspberrypi,5-model-b\0brcm,bcm2712\0".
+models=
+if [ -r "$compatible" ]; then models=$(tr '\0' ' ' < "$compatible"); fi
+models=${models% }
+
+case " $models" in
+    *" brcm,bcm2712"*)  renderer= ;;          # Pi 5, CM5, Pi 500: GPU MMU
+    *" raspberrypi,"*)  renderer=pixman ;;    # an older Pi: no GPU MMU
+    *)                  renderer= ;;          # not a Pi: wlroots chooses
+esac
+
+if [ -n "${WLR_RENDERER:-}" ]; then
+    echo "renderer: WLR_RENDERER=$WLR_RENDERER from compositor.env (board: ${models:-unknown})"
+elif [ -n "$renderer" ]; then
+    WLR_RENDERER=$renderer
+    export WLR_RENDERER
+    echo "renderer: WLR_RENDERER=$renderer for ${models:-unknown board}"
+else
+    echo "renderer: wlroots default for ${models:-unknown board}"
+fi
+
+[ $# -gt 0 ] || { echo "usage: $0 <compositor> [args...]" >&2; exit 2; }
+exec "$@"

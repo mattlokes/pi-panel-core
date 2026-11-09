@@ -7,7 +7,7 @@ The registry is `<data_home>/packages.json`, written by pluginman:
       "packages": {
         "immich": {
           "name": "immich", "kind": "app", "version": "0.3.0",
-          "description": "...", "path": "/home/pi/pi-panel-apps/immich",
+          "description": "...", "path": "/opt/pi-panel/pi-panel-apps/immich",
           "varlink": true, "rotate": true,
           "source": {...}, "installed_at": "..."      # pluginman's own bookkeeping
         }

@@ -5,7 +5,7 @@ path, varlink, rotate). Anything else here is pluginman's own bookkeeping.
 
     {"version": 1, "packages": {"immich": {
         "name": "immich", "kind": "app", "version": "0.3.0", "description": "...",
-        "path": "/home/pi/pi-panel-apps/immich", "varlink": true, "rotate": true,
+        "path": "/opt/pi-panel/pi-panel-apps/immich", "varlink": true, "rotate": true,
         "source": {"type": "git", "url": "...", "ref": "main", "commit": "abc123"},
         "installed_at": "2026-09-23T12:00:00+00:00"}}}
 """

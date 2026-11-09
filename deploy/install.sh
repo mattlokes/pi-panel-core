@@ -2,21 +2,31 @@
 # Install pi-panel's system files. The one step of a pi-panel install that
 # needs root:
 #
-#     sudo ~/pi-panel-core/deploy/install.sh
+#     sudo /opt/pi-panel/pi-panel-core/deploy/install.sh
 #
-# It expects the three core components built and synced first (as the user,
-# no root):
+# The layout (the unit files and the code's defaults assume it):
 #
-#     ~/pi-panel-core/pi-panel-core-compositor   meson setup build && ninja -C build
-#     ~/pi-panel-core/pi-panel-core-ctl          uv sync --frozen --compile-bytecode --all-packages
-#     ~/pi-panel-core/pi-panel-core-pluginman    uv sync --frozen --compile-bytecode
+#     /opt/pi-panel/pi-panel-core     this repo, built in place
+#     /opt/pi-panel/pi-panel-apps     installed apps   (pi-panel-pkg)
+#     /persistent/pi-panel/config     panel.toml, apps/<name>/config.toml, compositor.env
+#     /persistent/pi-panel/state      packages.json, staging
+#
+# It expects the three core components built and synced first, in place (as
+# the user, no root; venvs and the compositor's font path are not movable):
+#
+#     pi-panel-core-compositor   meson setup build && ninja -C build
+#     pi-panel-core-ctl          uv sync --frozen --compile-bytecode --all-packages
+#     pi-panel-core-pluginman    uv sync --frozen --compile-bytecode
 #
 # Safe to run again after pulling updates: it only copies files, links the
-# commands, and reloads systemd. It never starts or stops the running panel.
+# commands, creates missing directories and reloads systemd. It never starts
+# or stops the running panel.
 set -eu
 
 PANEL_USER=${PI_PANEL_USER:-pi}
 CORE=$(cd "$(dirname "$0")/.." && pwd)
+OPT=/opt/pi-panel
+PERSISTENT=/persistent/pi-panel
 COMPOSITOR=$CORE/pi-panel-core-compositor
 CTL=$CORE/pi-panel-core-ctl
 PLUGINMAN=$CORE/pi-panel-core-pluginman
@@ -39,13 +49,22 @@ need() {
     fi
 }
 need "$COMPOSITOR/build/pi-panel-compositor" "build the compositor: meson setup build && ninja -C build"
+need "$COMPOSITOR/deploy/start"               "pull the latest pi-panel-core"
 need "$CTL/.venv/bin/pi-panel-ctld"            "in $CTL: uv sync --frozen --compile-bytecode --all-packages"
 need "$PLUGINMAN/.venv/bin/pi-panel-run"       "in $PLUGINMAN: uv sync --frozen --compile-bytecode"
 
-# The unit files hard-code /home/pi and User=pi.
-if [ "$PANEL_USER" != pi ] || [ "$USER_HOME" != /home/pi ]; then
-    echo "warning: the unit files assume user pi with home /home/pi; edit them for $PANEL_USER" >&2
+# The unit files hard-code the layout and User=pi.
+if [ "$CORE" != "$OPT/pi-panel-core" ]; then
+    echo "warning: this checkout is $CORE, but the unit files run $OPT/pi-panel-core" >&2
 fi
+if [ "$PANEL_USER" != pi ]; then
+    echo "warning: the unit files assume User=pi; edit them for $PANEL_USER" >&2
+fi
+
+echo "== $PERSISTENT (config and state, owned by $PANEL_USER)"
+install -d -m 0755 "$PERSISTENT"
+install -d -m 0700 -o "$PANEL_USER" -g "$PANEL_USER" "$PERSISTENT/config"
+install -d -m 0755 -o "$PANEL_USER" -g "$PANEL_USER" "$PERSISTENT/state"
 
 echo "== systemd units"
 for f in \
@@ -91,30 +110,14 @@ do
     echo "   $name"
 done
 
-echo "== /etc/pi-panel/compositor.env"
-install -d -m 0755 /etc/pi-panel
-if [ ! -e /etc/pi-panel/compositor.env ]; then
-    {
-        echo "# Environment for pi-panel-compositor.service (WLR_RENDERER, WLR_DRM_DEVICES, ...)"
-        # Pis without a GPU MMU need the software renderer; labwc-pi makes the same check.
-        if command -v raspi-config >/dev/null 2>&1 && raspi-config nonint is_pi \
-           && ! raspi-config nonint gpu_has_mmu 2>/dev/null; then
-            echo "WLR_RENDERER=pixman"
-        fi
-    } > /etc/pi-panel/compositor.env
-    echo "   written"
-else
-    echo "   kept existing"
-fi
+# No compositor.env is written: pi-panel-core-compositor/deploy/start picks
+# the renderer at every start. Overrides go in $PERSISTENT/config/compositor.env
+# (an old /etc/pi-panel/compositor.env is still read).
 
 echo "== linger for $PANEL_USER (keeps /run/user/<uid> across compositor restarts)"
 loginctl enable-linger "$PANEL_USER"
 
 echo "== migrating from the old layout"
-if systemctl is-enabled --quiet pi-panel-mqtt.service 2>/dev/null; then
-    systemctl disable --now pi-panel-mqtt.service
-    echo "   disabled pi-panel-mqtt.service (reinstall it as the mqtt plugin)"
-fi
 if [ -f "$USER_HOME/.bash_profile" ] && grep -q pi-panel-session "$USER_HOME/.bash_profile"; then
     mv "$USER_HOME/.bash_profile" "$USER_HOME/.bash_profile.pre-pi-panel"
     echo "   moved ~/.bash_profile aside (it started the old compositor on tty1)"
