@@ -1,6 +1,9 @@
 """Installed packages, as recorded by pi-panel-pkg (pluginman).
 
-The registry is `<data_home>/packages.json`, written by pluginman:
+There are two registries in the same format, merged here: the image's
+(`/opt/pi-panel/packages.json`, what ships with the OS) and the panel's state
+(`/persistent/pi-panel/state/packages.json`, what was added on it). On a name
+clash the image's entry wins. Both are written by pluginman:
 
     {
       "version": 1,
@@ -39,9 +42,19 @@ class Package:
     path: str | None = None
     varlink: bool = False
     rotate: bool = True     # in the implicit default rotation (a camera app says no)
+    origin: str = "state"   # "image" or "state": which registry it came from
 
 
-def load_registry(path: Path) -> dict[str, Package]:
+def load_registries(image: Path | None, state: Path) -> dict[str, Package]:
+    """Both registries merged; the image's entry wins a name clash."""
+    image_pkgs = load_registry(image, "image") if image else {}
+    state_pkgs = load_registry(state, "state")
+    for name in image_pkgs.keys() & state_pkgs.keys():
+        log.warning("%s is in both package registries; using the image's", name)
+    return {**state_pkgs, **image_pkgs}
+
+
+def load_registry(path: Path, origin: str = "state") -> dict[str, Package]:
     try:
         data = json.loads(path.read_text())
     except FileNotFoundError:
@@ -63,5 +76,6 @@ def load_registry(path: Path) -> dict[str, Package]:
             path=entry.get("path"),
             varlink=bool(entry.get("varlink", False)),
             rotate=bool(entry.get("rotate", True)),
+            origin=origin,
         )
     return out

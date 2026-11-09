@@ -40,12 +40,21 @@ Wayland window, exit promptly on SIGTERM, and optionally serve
 ## Where things go
 
 ```
-/opt/pi-panel/pi-panel-core/            the core (see its README)
-/opt/pi-panel/pi-panel-apps/<name>/     installed apps
-/opt/pi-panel/pi-panel-plugin/<name>/   installed plugins
-/persistent/pi-panel/config/apps/<name>/   an app's config (from its templates; kept across updates)
-/persistent/pi-panel/state/packages.json   the registry pi-panel-ctl reads
+/opt/pi-panel/pi-panel-core/                the core (see its README)
+/opt/pi-panel/pi-panel-apps/<name>/         apps that ship with the OS
+/opt/pi-panel/pi-panel-plugin/<name>/       plugins that ship with the OS
+/opt/pi-panel/packages.json                 the image registry
+/persistent/pi-panel/state/packages/pi-panel-apps/<name>/   apps installed on the panel
+/persistent/pi-panel/state/packages/pi-panel-core           -> /opt/pi-panel/pi-panel-core
+/persistent/pi-panel/state/packages.json    the state registry
+/persistent/pi-panel/config/apps/<name>/    an app's config (from its templates; kept across updates)
 ```
+
+`pi-panel-pkg install` puts a package in the state directory. Packages that
+ship with the OS are updated with it: `update` and `remove` refuse them ("ships
+with the OS"), and `update` with no name skips them. `--image` acts on the
+image instead; an image build uses it, and so does a development panel whose
+`/opt` is writable. `pi-panel-pkg list` shows each package's origin.
 
 Each root can be moved with `PI_PANEL_HOME`, `PI_PANEL_CONFIG_HOME` and
 `PI_PANEL_DATA_HOME`; the tests and development use that.

@@ -20,11 +20,17 @@ def build_parser() -> argparse.ArgumentParser:
     x.add_argument("source")
     x.add_argument("--enable", action="store_true", help="enable it in pi-panel-ctl afterwards")
     x.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
+    image_help = ("act on the image's packages in /opt/pi-panel (building an image, or a "
+                  "writable development panel)")
+    x.add_argument("--image", action="store_true", help=image_help)
     x = sub.add_parser("update", help="reinstall from the recorded source")
-    x.add_argument("name", nargs="?", help="default: every package")
+    x.add_argument("name", nargs="?",
+                   help="default: every package installed on this panel (with --image: every one)")
+    x.add_argument("--image", action="store_true", help=image_help)
     x = sub.add_parser("remove", help="stop and uninstall")
     x.add_argument("name")
     x.add_argument("--purge", action="store_true", help="also delete its config directory")
+    x.add_argument("--image", action="store_true", help=image_help)
     sub.add_parser("list", help="installed packages")
     x = sub.add_parser("info", help="details of one package")
     x.add_argument("name")
@@ -56,15 +62,19 @@ async def run(args: argparse.Namespace) -> int:
                 return True
             return await asyncio.to_thread(_confirm_tty, manifest)
 
-        entry = await manager.install(args.source, confirm=confirm)
+        entry = await manager.install(args.source, confirm=confirm, image=args.image)
         if args.enable:
             await manager.set_enabled(entry.name, True)
     elif args.cmd == "update":
-        names = [args.name] if args.name else [e.name for e in manager.list()]
+        if args.name:
+            names = [args.name]
+        else:
+            # Packages that ship with the OS are updated with it, not one by one.
+            names = [e.name for e in manager.list() if args.image or e.origin == "state"]
         for name in names:
-            await manager.update(name)
+            await manager.update(name, image=args.image)
     elif args.cmd == "remove":
-        await manager.remove(args.name, purge=args.purge)
+        await manager.remove(args.name, purge=args.purge, image=args.image)
     elif args.cmd == "list":
         entries = manager.list()
         ctl = await manager.ctl_apps()
@@ -78,7 +88,7 @@ async def run(args: argparse.Namespace) -> int:
             elif ctl is None:
                 state = "ctl offline"
             rev = (e.source.commit or e.source.sha256 or "")[:10]
-            print(f"{e.name:<16} {e.kind:<7} {e.version or '-':<10} {rev:<11} {state}")
+            print(f"{e.name:<16} {e.kind:<7} {e.version or '-':<10} {e.origin:<6} {rev:<11} {state}")
     elif args.cmd == "info":
         entry = manager.registry.get(args.name)
         if entry is None:
@@ -89,6 +99,8 @@ async def run(args: argparse.Namespace) -> int:
         print(f"version:     {entry.version or '-'}")
         print(f"description: {entry.description or '-'}")
         print(f"path:        {entry.path}")
+        print(f"origin:      {entry.origin}"
+              f"{' (ships with the OS; updated with it)' if entry.origin == 'image' else ''}")
         print(f"config:      {paths.package_config_dir(entry.kind, entry.name)}")
         print(f"source:      {entry.source.type} {entry.source.url}"
               f"{'#' + entry.source.ref if entry.source.ref else ''}")

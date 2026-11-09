@@ -39,7 +39,8 @@ def test_defaults_are_the_panel_layout(clean_env):
 def test_pluginman_agrees(clean_env):
     pm = _pluginman_paths()
     assert pm.home() == Path("/opt/pi-panel")
-    for name in ("config_home", "data_home", "runtime_dir", "registry", "ctl_socket"):
+    for name in ("home", "config_home", "data_home", "runtime_dir", "registry",
+                 "image_registry", "ctl_socket"):
         assert getattr(pm, name)() == getattr(paths, name)(), name
     assert pm.app_socket("x") == paths.app_socket("x")
 
@@ -48,5 +49,6 @@ def test_pluginman_agrees_under_overrides(monkeypatch, tmp_path):
     for name in ENV:
         monkeypatch.setenv(name, str(tmp_path / name.lower()))
     pm = _pluginman_paths()
-    for name in ("config_home", "data_home", "runtime_dir", "registry", "ctl_socket"):
+    for name in ("home", "config_home", "data_home", "runtime_dir", "registry",
+                 "image_registry", "ctl_socket"):
         assert getattr(pm, name)() == getattr(paths, name)(), name

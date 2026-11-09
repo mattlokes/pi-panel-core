@@ -41,7 +41,7 @@ from .compositor import CompositorLink
 from .config import CtlConfig, resolve_path
 from .engine import Clock, Engine, SystemClock
 from .model import ClockSettings, Rotation, RotationEntry, Schedule, ValidationError
-from .packages import Package, load_registry
+from .packages import Package, load_registries
 from .units import SystemdUnits, UnitError, Units
 
 log = logging.getLogger("pi-panel-ctl")
@@ -64,14 +64,16 @@ class Ctl:
         config_path: Path,
         registry_path: Path,
         units: Units,
+        image_registry_path: Path | None = None,
         compositor_address: str,
         clock: Clock | None = None,
     ) -> None:
         self.config_path = config_path
         self.registry_path = registry_path
+        self.image_registry_path = image_registry_path
         self.config = CtlConfig.load(config_path)
         self._base = self.config.to_toml()   # what the file holds, for merging saves
-        self.packages: dict[str, Package] = load_registry(registry_path)
+        self.packages: dict[str, Package] = load_registries(image_registry_path, registry_path)
         self.units = units
         self.units.on_change = lambda unit, state: self.kick()
         self.compositor = CompositorLink(compositor_address, on_change=self.kick)
@@ -526,7 +528,7 @@ class Ctl:
             raise _err("UnitFailed", unit=unit, message=exc.message)
 
     async def v_Rescan(self, call: Call) -> dict[str, Any]:
-        self.packages = load_registry(self.registry_path)
+        self.packages = load_registries(self.image_registry_path, self.registry_path)
         log.info("rescanned: %d package(s) installed", len(self.packages))
         await self.reconcile_packages()
         return {"apps": self.apps_list()}
@@ -571,7 +573,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pi-panel-ctld", description="pi-panel control daemon")
     p.add_argument("--config", type=Path, default=None,
                    help=f"default: {paths.panel_config()} (or the old ctl.toml beside it)")
-    p.add_argument("--registry", type=Path, default=None, help=f"default: {paths.registry()}")
+    p.add_argument("--registry", type=Path, default=None,
+                   help=f"the state registry (default: {paths.registry()})")
+    p.add_argument("--image-registry", type=Path, default=None,
+                   help=f"the image registry (default: {paths.image_registry()})")
     p.add_argument("--socket", default=None, help=f"default: {paths.ctl_socket()}")
     p.add_argument("--compositor-socket", default=None,
                    help=f"default: {paths.compositor_socket()}")
@@ -587,6 +592,7 @@ async def _amain(args: argparse.Namespace) -> None:
     ctl = Ctl(
         config_path=args.config or resolve_path(paths.config_home()),
         registry_path=args.registry or paths.registry(),
+        image_registry_path=args.image_registry or paths.image_registry(),
         units=units,
         compositor_address=args.compositor_socket or str(paths.compositor_socket()),
     )

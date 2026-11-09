@@ -29,7 +29,7 @@ from pi_panel_varlink import Client, ProtocolError, VarlinkError, VarlinkTimeout
 
 from . import paths
 from .manifest import FILENAME, Manifest, ManifestError
-from .registry import Entry, Registry, Source
+from .registry import IMAGE, STATE, Entry, Registry, Source
 
 Output = Callable[[str], None]
 Confirm = Callable[[Manifest], Awaitable[bool]]
@@ -98,7 +98,7 @@ def _env() -> dict[str, str]:
 class Manager:
     def __init__(self, output: Output = print, ctl_socket: str | None = None) -> None:
         self.output = output
-        self.registry = Registry(paths.registry())
+        self.registry = Registry(paths.registry(), paths.image_registry())
         self.ctl = Client(ctl_socket or str(paths.ctl_socket()), timeout=5.0)
 
     # --- helpers ---------------------------------------------------------
@@ -206,7 +206,31 @@ class Manager:
 
     # --- operations ------------------------------------------------------
 
-    async def install(self, source_text: str, confirm: Confirm | None = None) -> Entry:
+    def _refuse_image(self, entry: Entry, image: bool, what: str) -> None:
+        if entry.origin == IMAGE and not image:
+            raise PackageError(f"{entry.name} ships with the OS and cannot be {what} here; "
+                               f"it is updated with the system (OTA)")
+
+    def _link_core(self) -> None:
+        """Packages installed on the panel reach the shared libraries by the
+        same relative path as image packages (../../pi-panel-core/...): a
+        pi-panel-core link beside them makes that resolve."""
+        root = paths.extras_home()
+        root.mkdir(parents=True, exist_ok=True)
+        link = root / "pi-panel-core"
+        target = paths.home() / "pi-panel-core"
+        if link.is_symlink() and Path(os.readlink(link)) == target:
+            return
+        if link.is_symlink():
+            link.unlink()
+        if not link.exists():
+            link.symlink_to(target)
+
+    async def install(self, source_text: str, confirm: Confirm | None = None,
+                      image: bool = False) -> Entry:
+        """Install (or reinstall) a package. Normally it goes into the state
+        directory; `image` installs it beside the core and records it in the
+        image registry (for building an image, or on a writable dev panel)."""
         spec = parse_source(source_text)
         paths.staging().mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix="install-", dir=paths.staging()))
@@ -222,6 +246,11 @@ class Manager:
             existing = self.registry.get(manifest.name)
             if existing and existing.kind != manifest.kind:
                 raise PackageError(f"{manifest.name!r} is already installed as a {existing.kind}")
+            if existing:
+                self._refuse_image(existing, image, "replaced")
+                if image and existing.origin != IMAGE:
+                    raise PackageError(f"{manifest.name!r} is installed on this panel; "
+                                       f"remove it before installing it into the image")
             if confirm is not None and not await confirm(manifest):
                 raise PackageError("cancelled")
 
@@ -235,7 +264,9 @@ class Manager:
                     f"{manifest.name} needs system packages that are not installed.\n"
                     f"Install them first:  sudo apt install {' '.join(missing)}")
 
-            dest = paths.package_dir(manifest.kind, manifest.name)
+            if not image:
+                self._link_core()
+            dest = paths.package_dir(manifest.kind, manifest.name, image=image)
             dest.parent.mkdir(parents=True, exist_ok=True)
             previous = stage / "previous"
             if dest.exists():
@@ -258,6 +289,7 @@ class Manager:
                 name=manifest.name, kind=manifest.kind, path=str(dest), source=source,
                 version=manifest.version, description=manifest.description,
                 varlink=manifest.varlink, rotate=manifest.rotate,
+                origin=IMAGE if image else STATE,
             )
             self.registry.put(entry)
             self.output(f"installed {manifest.name} into {dest}")
@@ -284,13 +316,14 @@ class Manager:
                 shutil.copyfile(src, target)
                 self.output(f"wrote config {target} (edit it)")
 
-    async def update(self, name: str) -> Entry:
+    async def update(self, name: str, image: bool = False) -> Entry:
         entry = self.registry.get(name)
         if entry is None:
             raise PackageError(f"{name!r} is not installed")
+        self._refuse_image(entry, image, "updated")
         text = entry.source.url + (f"#{entry.source.ref}" if entry.source.ref else "")
         self.output(f"updating {name} from {text}")
-        updated = await self.install(text)
+        updated = await self.install(text, image=entry.origin == IMAGE)
         if updated.name != name:
             raise PackageError(f"the source now provides {updated.name!r}, not {name!r}")
         if entry.source.commit and entry.source.commit == updated.source.commit:
@@ -298,10 +331,11 @@ class Manager:
         await self._ctl("RestartPackage", {"name": name})
         return updated
 
-    async def remove(self, name: str, purge: bool = False) -> None:
+    async def remove(self, name: str, purge: bool = False, image: bool = False) -> None:
         entry = self.registry.get(name)
         if entry is None:
             raise PackageError(f"{name!r} is not installed")
+        self._refuse_image(entry, image, "removed")
         # Stop it first (and drop it from panel.toml), so nothing runs from a
         # directory that is about to disappear.
         await self._ctl("EnablePackage", {"name": name, "enabled": False})

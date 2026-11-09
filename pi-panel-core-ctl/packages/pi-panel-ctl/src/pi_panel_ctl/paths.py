@@ -1,6 +1,7 @@
 """Where pi-panel keeps things. pluginman's paths.py uses the same defaults
 (a test in this package checks that they agree).
 
+    PI_PANEL_HOME          /opt/pi-panel                 the code; packages.json there is the image registry
     PI_PANEL_CONFIG_HOME   /persistent/pi-panel/config   panel.toml, per-package config
     PI_PANEL_DATA_HOME     /persistent/pi-panel/state    the state registry, extra packages
     PI_PANEL_RUNTIME_DIR   /run/pi-panel                 Varlink sockets
@@ -20,9 +21,14 @@ import os
 from pathlib import Path
 
 
+HOME = "/opt/pi-panel"
 CONFIG_HOME = "/persistent/pi-panel/config"
 DATA_HOME = "/persistent/pi-panel/state"
 RUNTIME_DIR = "/run/pi-panel"
+
+
+def home() -> Path:
+    return Path(os.environ.get("PI_PANEL_HOME") or HOME)
 
 
 def config_home() -> Path:
@@ -43,7 +49,13 @@ def panel_config() -> Path:
 
 
 def registry() -> Path:
+    """The state registry: packages installed on this panel."""
     return data_home() / "packages.json"
+
+
+def image_registry() -> Path:
+    """The image registry: packages that ship with the OS."""
+    return home() / "packages.json"
 
 
 def compositor_socket() -> Path:

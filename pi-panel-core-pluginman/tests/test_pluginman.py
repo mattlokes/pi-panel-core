@@ -125,7 +125,11 @@ async def test_install_from_git_repo(panel_home, tmp_path):
     out = Lines()
     entry = await Manager(output=out).install(f"file://{repo}")
     dest = paths.package_dir("app", "demo")
-    assert dest == panel_home / "home" / "pi-panel-apps" / "demo"
+    # Installed on the panel: into the state directory, beside a core link.
+    assert dest == panel_home / "data" / "packages" / "pi-panel-apps" / "demo"
+    core_link = panel_home / "data" / "packages" / "pi-panel-core"
+    assert core_link.is_symlink() and core_link.readlink() == panel_home / "home" / "pi-panel-core"
+    assert entry.origin == "state"
     assert (dest / "built.txt").read_text() == "ok\n"               # build ran in place
     assert "building" in out
     assert entry.source.type == "git" and len(entry.source.commit) == 40
@@ -361,3 +365,67 @@ async def test_run_substitutes_env_and_records_rotate(panel_home, tmp_path):
     assert json.loads(paths.registry().read_text())["packages"]["cam"]["rotate"] is False
     _, _, env = run.build("app", "cam")
     assert env["PYTHONPATH"] == f"{paths.package_dir('app', 'cam')}/src"
+
+
+# --- the image registry and the state registry --------------------------------
+
+def image_registry_with(panel_home: Path, name: str = "photos") -> None:
+    """An image package, as plan 4's build leaves it: in /opt beside the core,
+    in the read-only image registry."""
+    dest = panel_home / "home" / "pi-panel-apps" / name
+    make_package(dest, name=name)
+    paths.image_registry().parent.mkdir(parents=True, exist_ok=True)
+    paths.image_registry().write_text(json.dumps({"version": 1, "packages": {name: {
+        "name": name, "kind": "app", "path": str(dest), "version": "1.0",
+        "source": {"type": "local", "url": str(dest)}}}}))
+
+
+async def test_image_packages_are_listed_and_runnable(panel_home):
+    image_registry_with(panel_home)
+    m = Manager(output=Lines())
+    assert [(e.name, e.origin) for e in m.list()] == [("photos", "image")]
+    package_dir, argv, env = run.build("app", "photos")      # pi-panel-run finds it
+    assert package_dir == panel_home / "home" / "pi-panel-apps" / "photos"
+
+
+@pytest.mark.parametrize("op", ["update", "remove"])
+async def test_image_packages_cannot_be_updated_or_removed(panel_home, op):
+    image_registry_with(panel_home)
+    with pytest.raises(PackageError, match="ships with the OS"):
+        await getattr(Manager(output=Lines()), op)("photos")
+    assert (panel_home / "home" / "pi-panel-apps" / "photos").exists()   # untouched
+
+
+async def test_installing_over_an_image_package_is_refused(panel_home, tmp_path):
+    image_registry_with(panel_home)
+    with pytest.raises(PackageError, match="ships with the OS"):
+        await Manager(output=Lines()).install(str(make_package(tmp_path / "p", name="photos")))
+
+
+async def test_install_image_writes_the_image_registry(panel_home, tmp_path):
+    m = Manager(output=Lines())
+    entry = await m.install(str(make_package(tmp_path / "p", name="photos")), image=True)
+    assert entry.origin == "image"
+    assert entry.path == str(panel_home / "home" / "pi-panel-apps" / "photos")
+    assert "photos" in json.loads(paths.image_registry().read_text())["packages"]
+    assert not paths.registry().exists()
+    await m.remove("photos", image=True)                      # the explicit override
+    assert not (panel_home / "home" / "pi-panel-apps" / "photos").exists()
+
+
+async def test_state_and_image_packages_merge_image_wins(panel_home, tmp_path, caplog):
+    image_registry_with(panel_home, "photos")
+    m = Manager(output=Lines())
+    await m.install(str(make_package(tmp_path / "x", name="extra")))
+    paths.registry().write_text(paths.registry().read_text().replace('"extra"', '"photos"'))
+    m.registry.load()
+    assert m.registry.get("photos").origin == "image"
+    assert "both registries" in caplog.text
+
+
+async def test_extra_package_reaches_the_core_by_relative_path(panel_home, tmp_path):
+    (panel_home / "home" / "pi-panel-core" / "lib").mkdir(parents=True)
+    (panel_home / "home" / "pi-panel-core" / "lib" / "marker").write_text("core\n")
+    await Manager(output=Lines()).install(str(make_package(tmp_path / "p", name="extra")))
+    dest = paths.package_dir("app", "extra")
+    assert (dest / "../../pi-panel-core/lib/marker").read_text() == "core\n"

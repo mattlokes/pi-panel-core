@@ -29,7 +29,7 @@ from .registry import Registry
 
 
 def build(kind: str, name: str) -> tuple[Path, list[str], dict[str, str]]:
-    entry = Registry(paths.registry()).get(name)
+    entry = Registry(paths.registry(), paths.image_registry()).get(name)
     if entry is None:
         raise SystemExit(f"pi-panel-run: {name!r} is not installed (pi-panel-pkg list)")
     if entry.kind != kind:

@@ -1,7 +1,14 @@
 """packages.json: what is installed, where from, and where to.
 
-pluginman writes it; pi-panel-ctl reads it (name, kind, version, description,
-path, varlink, rotate). Anything else here is pluginman's own bookkeeping.
+There are two, with the same format:
+
+    the image registry   /opt/pi-panel/packages.json            what ships with the OS
+    the state registry   /persistent/pi-panel/state/packages.json  what was added on the panel
+
+`Registry` reads both and merges them; on a name clash the image wins (and a
+warning says so). pluginman writes them; pi-panel-ctl reads them (name, kind,
+version, description, path, varlink, rotate). Anything else here is
+pluginman's own bookkeeping.
 
     {"version": 1, "packages": {"immich": {
         "name": "immich", "kind": "app", "version": "0.3.0", "description": "...",
@@ -13,6 +20,7 @@ path, varlink, rotate). Anything else here is pluginman's own bookkeeping.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field
@@ -21,6 +29,9 @@ from pathlib import Path
 from typing import Any
 
 FORMAT_VERSION = 1
+IMAGE, STATE = "image", "state"
+
+log = logging.getLogger("pi-panel-pkg")
 
 
 @dataclass(slots=True)
@@ -44,9 +55,12 @@ class Entry:
     rotate: bool = True
     installed_at: str = field(default_factory=lambda: datetime.now(timezone.utc)
                               .isoformat(timespec="seconds"))
+    origin: str = STATE            # which registry it is in; not stored
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        del data["origin"]
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Entry":
@@ -62,32 +76,56 @@ class Entry:
         )
 
 
+def _read(path: Path, origin: str) -> dict[str, Entry]:
+    try:
+        data = json.loads(path.read_text())
+    except FileNotFoundError:
+        return {}
+    out = {}
+    for n, e in (data.get("packages") or {}).items():
+        entry = Entry.from_dict(e)
+        entry.origin = origin
+        out[n] = entry
+    return out
+
+
 class Registry:
-    def __init__(self, path: Path) -> None:
-        self.path = path
+    """Both registries, merged. `entries` is the merged view; writes go to
+    the registry an entry belongs to."""
+
+    def __init__(self, path: Path, image_path: Path | None = None) -> None:
+        self.path = path                  # the state registry
+        self.image_path = image_path      # the image registry (None: not used)
         self.entries: dict[str, Entry] = {}
         self.load()
 
     def load(self) -> None:
-        try:
-            data = json.loads(self.path.read_text())
-        except FileNotFoundError:
-            self.entries = {}
-            return
-        self.entries = {n: Entry.from_dict(e) for n, e in (data.get("packages") or {}).items()}
+        self.state = _read(self.path, STATE)
+        self.image = _read(self.image_path, IMAGE) if self.image_path else {}
+        for name in self.state.keys() & self.image.keys():
+            log.warning("%s is in both registries; the image's wins", name)
+        self.entries = {**self.state, **self.image}
 
-    def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+    def _file(self, origin: str) -> tuple[Path, dict[str, Entry]]:
+        if origin == IMAGE:
+            if self.image_path is None:
+                raise ValueError("no image registry configured")
+            return self.image_path, self.image
+        return self.path, self.state
+
+    def save(self, origin: str = STATE) -> None:
+        path, entries = self._file(origin)
+        path.parent.mkdir(parents=True, exist_ok=True)
         data = {"version": FORMAT_VERSION,
-                "packages": {n: e.to_dict() for n, e in sorted(self.entries.items())}}
-        fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=".packages.json.")
+                "packages": {n: e.to_dict() for n, e in sorted(entries.items())}}
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".packages.json.")
         try:
             with os.fdopen(fd, "w") as fh:
                 json.dump(data, fh, indent=2)
                 fh.write("\n")
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(tmp, self.path)
+            os.replace(tmp, path)
         except BaseException:
             try:
                 os.unlink(tmp)
@@ -99,9 +137,17 @@ class Registry:
         return self.entries.get(name)
 
     def put(self, entry: Entry) -> None:
-        self.entries[entry.name] = entry
-        self.save()
+        """Record an entry in the registry its `origin` names."""
+        _, entries = self._file(entry.origin)
+        entries[entry.name] = entry
+        self.save(entry.origin)
+        self.entries = {**self.state, **self.image}
 
     def remove(self, name: str) -> None:
-        self.entries.pop(name, None)
-        self.save()
+        entry = self.entries.get(name)
+        if entry is None:
+            return
+        _, entries = self._file(entry.origin)
+        entries.pop(name, None)
+        self.save(entry.origin)
+        self.entries = {**self.state, **self.image}
