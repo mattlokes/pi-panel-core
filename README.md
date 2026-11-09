@@ -87,6 +87,34 @@ component's README for the details.
 **Recovery.** `systemctl restart pi-panel.target` works over SSH without a
 password. If the compositor keeps failing, a login prompt comes back on tty1.
 
+## Moving from the old layout
+
+Before plan 2 a panel ran from `~/pi-panel-core` and `~/pi-panel-apps`, with
+config in `~/.config/pi-panel/ctl.toml` and MQTT as the plugin
+`pi-panel-plugin-mqtt`. To move one over, without touching the old install
+until the last step:
+
+```bash
+# as root: the new directories
+sudo install -d -o pi -g pi /opt/pi-panel
+sudo install -d -m 755 /persistent/pi-panel
+sudo install -d -o pi -g pi -m 700 /persistent/pi-panel/config
+sudo install -d -o pi -g pi /persistent/pi-panel/state
+
+# as pi: the new core, built in place (see Installing a panel), then
+/opt/pi-panel/pi-panel-core/pi-panel-core-ctl/.venv/bin/python -m pi_panel_ctl.migrate --dry-run
+/opt/pi-panel/pi-panel-core/pi-panel-core-ctl/.venv/bin/python -m pi_panel_ctl.migrate
+
+# as root: switch the units over
+sudo /opt/pi-panel/pi-panel-core/deploy/install.sh && sudo systemctl restart pi-panel.target
+```
+
+The migration turns ctl.toml into panel.toml, folds the MQTT plugin's
+mqtt.toml into `[mqtt]`, copies each app's config, reinstalls the apps as
+image packages under `/opt/pi-panel` from their repos, converts immich's
+config.yaml, and runs `pi-panel-ctl config check`. To go back, run the old
+`~/pi-panel-core/deploy/install.sh` and restart.
+
 ## Updating
 
 ```bash
