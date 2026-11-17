@@ -1,6 +1,6 @@
 # System packages
 
-What pi-panel-core needs from the OS, for building an image. This was measured on
+What pi-panel-core needs from the OS. It was first measured on
 a fresh Raspberry Pi OS **Lite** (trixie, arm64, the 2026-10-06 image) on a
 Pi 5, with every install done as `apt-get install --no-install-recommends`.
 Each list holds only what was missing from Lite. The packages Lite already
@@ -40,9 +40,26 @@ gir1.2-gtk-4.0          # the welcome screen: GTK 4
 ```
 
 The two welcome-screen packages are the same ones the GTK apps (now-playing)
-already list, so a panel with now-playing installed needs nothing new. They
-were added in plan 3 and have not been measured on a fresh Lite (prime has
-them through now-playing); plan 4 re-baselines this file for minbase anyway.
+already list, so a panel with now-playing installed needs nothing new.
+
+### On the image (trixie minbase, plan 4)
+
+The OS image is built from rpi-image-gen's trixie **minbase**, not Lite. Its
+`pi-panel` layer (`pi-panel-image/layer/pi-panel.yaml`) is the measured list:
+the runtime packages above plus the ones Lite provided and minbase does not:
+
+```
+polkitd libpam-systemd dbus  # in Lite; explicit on minbase
+xkb-data curl ca-certificates
+fonts-dejavu-core            # GTK's and the compositor's fallback font
+cloud-guest-utils            # growpart, for first boot
+```
+
+plus every app's `[system]` packages. The 2026.11.0 image has 602 packages
+(its `.manifest.txt` lists them) and no build tools: those are installed,
+used and purged inside the build. minbase networking is systemd-networkd
+plus iwd, not NetworkManager. Nothing in the core needs raspi-config:
+`deploy/start` reads the board itself.
 
 The compositor needs no fonts. Its clock font is in
 `pi-panel-core-compositor/fonts/`, and DejaVu Sans is only the fallback.
