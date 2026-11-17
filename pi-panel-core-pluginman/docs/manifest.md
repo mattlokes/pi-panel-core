@@ -56,7 +56,7 @@ variables that `pi-panel-run` sets.
 ## `[build]`
 
 `command` runs in the installed package directory after every install and
-update, through `/bin/sh`, with `~/.local/bin` (where `uv` lives) on `PATH`.
+update, through `/bin/sh`, with `/usr/local/bin` (where `uv` lives) on `PATH`.
 Its output streams to `pi-panel-pkg` and the TUI. If it fails, the previous
 version is restored.
 

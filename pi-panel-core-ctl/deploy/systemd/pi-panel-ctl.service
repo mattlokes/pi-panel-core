@@ -9,8 +9,10 @@ After=pi-panel-compositor.service dbus.service
 
 [Service]
 Type=notify
-User=pi
-Group=pi
+User=pi-panel
+Group=pi-panel
+# Group-writable files, so login users in the pi-panel group share config and state.
+UMask=0002
 Slice=pi-panel.slice
 RuntimeDirectory=pi-panel/ctl
 RuntimeDirectoryMode=0750

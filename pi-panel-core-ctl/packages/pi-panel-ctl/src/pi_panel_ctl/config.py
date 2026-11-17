@@ -290,6 +290,9 @@ def _write_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
     try:
+        # mkstemp makes 0600; the panel's group (login users) may read and edit
+        # it. Not world-readable: it can hold the MQTT password.
+        os.fchmod(fd, 0o660)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(text)
             fh.flush()

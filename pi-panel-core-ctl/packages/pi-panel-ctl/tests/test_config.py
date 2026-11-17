@@ -93,13 +93,13 @@ def test_removing_the_last_rotation_removes_the_table(tmp_path):
     assert "rotation" not in tomllib.loads(path.read_text())
 
 
-def test_new_file_has_schema_header_and_mode_0600(tmp_path):
+def test_new_file_has_schema_header_and_mode_0660(tmp_path):
     path = tmp_path / "sub" / "panel.toml"
     CtlConfig(enabled=["photos"]).save(path)
     text = path.read_text()
     assert text.startswith("# pi-panel's main configuration.")
     assert tomllib.loads(text)["schema"] == 1
-    assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(path).st_mode) == 0o660   # group: the login users
 
 
 def test_unparseable_file_is_kept_aside_on_save(tmp_path):

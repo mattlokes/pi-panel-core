@@ -77,6 +77,6 @@ def _pw(name, uid, shell="/bin/bash"):
 
 def test_login_user_is_the_first_ordinary_account():
     entries = [_pw("root", 0), _pw("nobody", 65534, "/usr/sbin/nologin"),
-               _pw("pipanel", 999, "/usr/sbin/nologin"), _pw("matt", 1001), _pw("pi", 1000)]
+               _pw("pi-panel", 999, "/usr/sbin/nologin"), _pw("matt", 1001), _pw("pi", 1000)]
     assert info.login_user(entries) == "pi"
     assert info.login_user([_pw("root", 0)]) is None

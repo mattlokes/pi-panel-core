@@ -91,7 +91,7 @@ def test_write_config_keeps_modes_and_validates(old):
     home, etc, new = old
     plan, _ = migrate.plan_config(home, new, etc)
     migrate.write_config(plan, new)
-    assert stat.S_IMODE((new / "panel.toml").stat().st_mode) == 0o600
+    assert stat.S_IMODE((new / "panel.toml").stat().st_mode) == 0o660
     assert stat.S_IMODE((new / "apps" / "now-playing" / "config.toml").stat().st_mode) == 0o600
     assert CtlConfig.load(new / "panel.toml").mqtt_enabled()
     assert not (new / "plugins").exists()

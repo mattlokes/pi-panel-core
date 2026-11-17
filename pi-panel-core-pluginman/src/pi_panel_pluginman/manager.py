@@ -89,9 +89,8 @@ def missing_system_packages(packages: tuple[str, ...] | list[str]) -> list[str] 
 def _env() -> dict[str, str]:
     """Environment for build commands: the panel's paths, and uv on PATH."""
     env = dict(os.environ)
-    local_bin = str(Path.home() / ".local" / "bin")
-    if local_bin not in env.get("PATH", "").split(":"):
-        env["PATH"] = f"{local_bin}:{env.get('PATH', '/usr/bin:/bin')}"
+    if "/usr/local/bin" not in env.get("PATH", "").split(":"):
+        env["PATH"] = f"/usr/local/bin:{env.get('PATH', '/usr/bin:/bin')}"
     return env
 
 

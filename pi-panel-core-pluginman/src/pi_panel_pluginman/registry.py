@@ -125,6 +125,9 @@ class Registry:
                 "packages": {n: e.to_dict() for n, e in sorted(entries.items())}}
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".packages.json.")
         try:
+            # mkstemp makes 0600. The panel's service user reads both
+            # registries, and login users in its group write the state one.
+            os.fchmod(fd, 0o664)
             with os.fdopen(fd, "w") as fh:
                 json.dump(data, fh, indent=2)
                 fh.write("\n")

@@ -10,8 +10,10 @@ After=pi-panel-compositor.service pi-panel-ctl.service
 
 [Service]
 Type=exec
-User=pi
-Group=pi
+User=pi-panel
+Group=pi-panel
+# Group-writable files, so login users in the pi-panel group share config and state.
+UMask=0002
 Slice=pi-panel.slice
 SyslogIdentifier=pi-panel-app-%i
 

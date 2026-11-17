@@ -49,11 +49,11 @@ The compositor needs no fonts. Its clock font is in
 
 ## Not from apt
 
-- **uv** in `~pi/.local/bin/uv`, installed with the official installer (0.12.10 on jazz and prime).
-  - `pi-panel-run` puts `~/.local/bin` first on PATH, so apps whose `[run]` calls `uv` (immich) find it under systemd.
+- **uv** in `/usr/local/bin/uv`, system-wide, so the service user and every login user share one (`curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh`; 0.12.10 on jazz and prime).
+  - `pi-panel-run` makes sure `/usr/local/bin` is on PATH, so apps whose `[run]` calls `uv` (immich) find it.
   - `pi-panel-pkg` runs package builds with it.
 - **Python** is the system `python3` (3.13). `uv sync` makes the ctl and pluginman venvs from `/usr/bin/python3.13` and downloads no interpreter.
-- **The code** is `git clone https://github.com/mattlokes/pi-panel-core.git /opt/pi-panel/pi-panel-core` (with `/opt/pi-panel` owned by `pi`), then build it in place:
+- **The code** is `git clone https://github.com/mattlokes/pi-panel-core.git /opt/pi-panel/pi-panel-core` (with `/opt/pi-panel` owned by the login user; the service user only reads it), then build it in place:
   ```bash
   (cd pi-panel-core-compositor && meson setup build && ninja -C build)
   (cd pi-panel-core-ctl       && uv sync --frozen --compile-bytecode --all-packages)
@@ -70,15 +70,16 @@ The compositor needs no fonts. Its clock font is in
 All of this happens in `install.sh`, so an image can just run it in the chroot:
 - copies the units, `/etc/pam.d/pi-panel` and `/etc/polkit-1/rules.d/50-pi-panel.rules`
 - symlinks `pi-panel-{ctl,ctld,pkg,run}` into `/usr/local/bin`
-- creates `/persistent/pi-panel/{config,state}`, owned by `pi`
+- creates the system user and group `pi-panel` (also in `video`, `render`, `input`; home `/persistent/pi-panel/home`, nologin) and adds the login user (`PI_PANEL_LOGIN_USER`, default `$SUDO_USER`) to the group
+- creates `/persistent/pi-panel/{config,state}`, owned by `pi-panel:pi-panel`, setgid and group-writable
 - writes no compositor.env: `pi-panel-core-compositor/deploy/start` picks the renderer at each start (pixman on Pis without a GPU MMU); overrides go in `/persistent/pi-panel/config/compositor.env`
-- runs `loginctl enable-linger pi`. In a chroot without logind, create `/var/lib/systemd/linger/pi` instead.
+- runs `loginctl enable-linger pi-panel`; in a chroot (no running systemd) it writes `/var/lib/systemd/linger/pi-panel` itself and skips `daemon-reload`
 - `systemctl set-default multi-user.target`, then enables `pi-panel.target`, `pi-panel-compositor` and `pi-panel-ctl`. `pi-panel-mqtt.service` is installed but not enabled: ctl starts it from `[mqtt]` in panel.toml
 
 ## Already in Lite, and needed
 
 ```
-polkitd                 # the rule that lets pi manage pi-panel-* units
+polkitd                 # the rule that lets pi-panel and its group manage pi-panel-* units
 libpam-systemd          # the compositor's logind session on tty1 (PAMName=pi-panel)
 systemd                 # 257: varlinkctl
 python3
@@ -89,6 +90,6 @@ curl ca-certificates    # uv installer, package fetches
 
 ## User
 
-- The user is `pi` (uid 1000). The unit files and the polkit rule assume it (plan 4 moves the panel to a system user, `pipanel`).
-- `pi` must be in the `video`, `render` and `input` groups. Lite's default first user already is.
+- The panel runs as the system user `pi-panel` (group `pi-panel`), created by `install.sh`. The unit files and the polkit rule assume it. It is in the `video`, `render` and `input` groups.
+- The login user can be anyone (`pi` on jazz and prime). It joins the `pi-panel` group, which gives it the sockets, config, state and the `pi-panel-*` units.
 - On a Lite image flashed without Imager customisation, first boot runs userconf-pi's rename dialog (`userconfig.service` on tty8), and `pi` has a nologin shell. Prime was fixed with `sudo cancel-rename pi && sudo usermod -s /bin/bash pi`. An image recipe that creates `pi` itself never sees this.

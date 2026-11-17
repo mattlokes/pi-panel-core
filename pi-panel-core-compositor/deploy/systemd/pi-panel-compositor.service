@@ -14,7 +14,9 @@ StartLimitBurst=5
 
 [Service]
 Type=notify
-User=pi
+User=pi-panel
+Group=pi-panel
+UMask=0002
 PAMName=pi-panel
 TTYPath=/dev/tty1
 TTYReset=yes

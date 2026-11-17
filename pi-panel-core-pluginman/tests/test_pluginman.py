@@ -140,6 +140,8 @@ async def test_install_from_git_repo(panel_home, tmp_path):
 
     reg = json.loads(paths.registry().read_text())
     assert reg["packages"]["demo"]["path"] == str(dest)
+    # Read by the service user, written by login users in its group.
+    assert paths.registry().stat().st_mode & 0o777 == 0o664
     assert reg["packages"]["demo"]["kind"] == "app"
 
 

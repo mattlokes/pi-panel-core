@@ -51,9 +51,10 @@ def build(kind: str, name: str) -> tuple[Path, list[str], dict[str, str]]:
     }
     env = dict(os.environ)
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    local_bin = str(Path.home() / ".local" / "bin")
-    if local_bin not in env.get("PATH", "").split(":"):
-        env["PATH"] = f"{local_bin}:{env.get('PATH', '/usr/bin:/bin')}"
+    # uv lives in /usr/local/bin; systemd's default PATH has it, but a bare
+    # environment may not.
+    if "/usr/local/bin" not in env.get("PATH", "").split(":"):
+        env["PATH"] = f"/usr/local/bin:{env.get('PATH', '/usr/bin:/bin')}"
     env.update(manifest.environment(variables))
     # Set last: a manifest must not be able to redirect these.
     env.update({

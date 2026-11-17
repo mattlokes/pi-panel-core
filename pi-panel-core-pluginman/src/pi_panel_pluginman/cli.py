@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -133,6 +134,9 @@ async def run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    # Config and state are shared with the panel's service user through the
+    # pi-panel group (setgid directories), so what this writes is group-writable.
+    os.umask(0o002)
     args = build_parser().parse_args()
     try:
         return asyncio.run(run(args))

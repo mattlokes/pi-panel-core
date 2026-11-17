@@ -168,7 +168,7 @@ def write_config(plan: Plan, new_home: Path) -> None:
     new_home.mkdir(parents=True, exist_ok=True)
     target = new_home / "panel.toml"
     target.write_text(plan.panel_toml, encoding="utf-8")
-    target.chmod(0o600)                 # it holds the MQTT password, if any
+    target.chmod(0o660)                 # the MQTT password, if any: group only
     for src, dest in plan.copies:
         if dest.exists():
             shutil.rmtree(dest) if dest.is_dir() else dest.unlink()

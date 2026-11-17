@@ -45,7 +45,7 @@ On Raspberry Pi OS (trixie, Lite is enough), as the panel user `pi`.
 sudo apt install --no-install-recommends git python3-gi gir1.2-gtk-4.0 \
                  libwlroots-0.19-dev libwayland-dev libwayland-bin wayland-protocols \
                  libxkbcommon-dev libpixman-1-dev libdrm-dev meson ninja-build pkg-config
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
 
 sudo install -d -o pi -g pi /opt/pi-panel
 git clone https://github.com/mattlokes/pi-panel-core.git /opt/pi-panel/pi-panel-core
@@ -61,9 +61,10 @@ sudo reboot
 
 `deploy/install.sh` does the following:
 - installs the units, the PAM file and the polkit rule
-- creates `/persistent/pi-panel/config` and `/persistent/pi-panel/state`, owned by `pi`
+- creates the system user `pi-panel`, which the panel runs as, and adds the login user to its group
+- creates `/persistent/pi-panel/config` and `/persistent/pi-panel/state`, owned by `pi-panel` and shared with its group
 - links `pi-panel-ctl`, `pi-panel-ctld`, `pi-panel-pkg` and `pi-panel-run` into `/usr/local/bin`
-- enables lingering for `pi`, and enables `pi-panel.target`
+- enables lingering for `pi-panel`, and enables `pi-panel.target`
 - migrates an old install away from the `~/.bash_profile` / tty1 startup
 
 You can run it again safely after updates.

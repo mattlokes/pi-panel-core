@@ -13,7 +13,8 @@ Apps (`../pi-panel-apps/*`) and plugins (`../pi-panel-plugin/*`) are
 
 The target is `pi@jazz` (Raspberry Pi 5, trixie, arm64, uid 1000).
 - `sudo` on jazz needs a password, so root steps (only `deploy/install.sh`) go back to the user.
-- Once installed, the polkit rule lets `pi` manage every `pi-panel-*` unit without a password, so `systemctl restart pi-panel-ctl` works over SSH.
+- The panel runs as the system user `pi-panel` (since plan 4). `pi` is a login user in the `pi-panel` group: it reaches the sockets in `/run/pi-panel`, the group-writable config and state, and (polkit) every `pi-panel-*` unit without a password, so `systemctl restart pi-panel-ctl` works over SSH.
+- Logs: `journalctl -u pi-panel-ctl` etc. `/opt/pi-panel` stays owned by `pi` (the rsync target) and is read-only to `pi-panel`.
 - Do not run process-name patterns (`pgrep -f …`) inline over SSH, because they match your own session. Use `systemctl` and `systemd-run --user` units instead.
 - On jazz, logs from user units are not in `journalctl --user`. Query them with `journalctl _SYSTEMD_USER_UNIT=<unit>`.
 

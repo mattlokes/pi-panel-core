@@ -56,9 +56,8 @@ def check_argv(pkg: Package, config_home: Path) -> list[str]:
 
 def _env() -> dict[str, str]:
     env = dict(os.environ)
-    local_bin = str(Path.home() / ".local" / "bin")      # uv, as for pi-panel-run
-    if local_bin not in env.get("PATH", "").split(":"):
-        env["PATH"] = f"{local_bin}:{env.get('PATH', '/usr/bin:/bin')}"
+    if "/usr/local/bin" not in env.get("PATH", "").split(":"):   # uv, as for pi-panel-run
+        env["PATH"] = f"/usr/local/bin:{env.get('PATH', '/usr/bin:/bin')}"
     return env
 
 
